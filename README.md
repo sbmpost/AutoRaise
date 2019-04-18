@@ -9,17 +9,17 @@ folder. This is particularly useful when using the applescript below because 'la
 command line arguments. The delay should be specified in units of 50ms. For example to specify a delay of 150ms run
 this command once in a terminal: 'echo 3 > AutoRaise.delay'
 
-on run {input, parameters}
-    tell application "Finder"
-        if exists of application process "AutoRaise" then
-            quit application "/Applications/AutoRaise"
-            display notification "AutoRaise Stopped"
-        else
-            launch application "/Applications/AutoRaise"
-            display notification "AutoRaise Started"
-        end if
-    end tell
-    return input
-end run
+    on run {input, parameters}
+        tell application "Finder"
+            if exists of application process "AutoRaise" then
+                quit application "/Applications/AutoRaise"
+                display notification "AutoRaise Stopped"
+            else
+                launch application "/Applications/AutoRaise"
+                display notification "AutoRaise Started"
+            end if
+        end tell
+        return input
+    end run
 
 See also https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x

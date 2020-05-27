@@ -31,6 +31,85 @@ static int raiseTimes = 0;
 static int delayTicks = 0;
 static int delayCount = 0;
 
+AXUIElementRef fallback(CGPoint point) {
+    AXUIElementRef _window = nullptr;
+    AXUIElementRef _element = nullptr;
+    AXUIElementRef window_owner = nullptr;
+
+    // Fallback method, find the topmost window that contains the cursor
+    NSDictionary *selected_window = nullptr;
+    NSArray *window_list = [(NSArray *)CGWindowListCopyWindowInfo(
+        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+        kCGNullWindowID) autorelease];
+
+    NSRect window_bounds = NSZeroRect;
+
+    for (NSDictionary *current_window in window_list) {
+        NSDictionary *window_bounds_dict = current_window[(NSString *) kCGWindowBounds];
+
+        if (![current_window[(id)kCGWindowLayer] isEqual: @0]) {
+            continue;
+        }
+
+        int x = [window_bounds_dict[@"X"] intValue];
+        int y = [window_bounds_dict[@"Y"] intValue];
+        int width = [window_bounds_dict[@"Width"] intValue];
+        int height = [window_bounds_dict[@"Height"] intValue];
+        NSRect current_window_bounds = NSMakeRect(x, y, width, height);
+        if (NSPointInRect(NSPointFromCGPoint(point), current_window_bounds)) {
+            window_bounds = current_window_bounds;
+            selected_window = current_window;
+            break;
+        }
+    }
+
+    if (!selected_window) {
+        // NSLog(@"Unable to find window under cursor");
+        goto exit;
+    }
+
+    // Find the AXUIElement corresponding to the window via its application
+    {
+        int window_owner_pid = [selected_window[(id)kCGWindowOwnerPID] intValue];
+        window_owner = AXUIElementCreateApplication(window_owner_pid);
+        CFTypeRef windows_cf = nullptr;
+        NSArray *application_windows = nullptr;
+
+        if (AXUIElementCopyAttributeValue(window_owner, kAXWindowsAttribute, &windows_cf) != kAXErrorSuccess) {
+           // NSLog(@"Failed to find window under cursor");
+           goto exit;
+        }
+
+        application_windows = [(NSArray *) windows_cf autorelease];
+
+        CGWindowID selected_window_id = [selected_window[(id)kCGWindowNumber] intValue];
+
+        if (!selected_window_id) {
+            NSLog(@"Unable to get window ID for selected window");
+            goto exit;
+        }
+
+        for (id application_window in application_windows) {
+            AXUIElementRef application_window_ax = (__bridge AXUIElementRef)application_window;
+            CGWindowID application_window_id = 0;
+
+            if (_AXUIElementGetWindow(application_window_ax, &application_window_id) == kAXErrorSuccess) {
+                if (application_window_id == selected_window_id) {
+                    _element = application_window_ax;
+                    CFRetain(_element);
+                    goto exit;
+                }
+            } else {
+                // NSLog(@"Unable to get window id from AXUIElement");
+            }
+        }
+    }
+
+exit:
+    if (window_owner) CFRelease(window_owner);
+    return _element;
+}
+
 AXUIElementRef window_get_from_point(CGPoint point) {
     AXUIElementRef _window = nullptr;
     AXUIElementRef _element = nullptr;
@@ -51,7 +130,9 @@ AXUIElementRef window_get_from_point(CGPoint point) {
                 _window = _element;
                 _element = nullptr;
             } else {
-                AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *)&_window);
+                if (AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *)&_window) != kAXErrorSuccess) {
+                    _window = fallback(point);
+                }
             }
         }
     }

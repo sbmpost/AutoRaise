@@ -131,7 +131,10 @@ AXUIElementRef window_get_from_point(CGPoint point) {
                 _element = nullptr;
             } else {
                 if (AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *)&_window) != kAXErrorSuccess) {
-                    _window = fallback(point);
+                    // NSLog(@"Element role %@", _element_role);
+                    if (CFStringCompare(kAXMenuItemRole, _element_role, 0) != kCFCompareEqualTo) {
+                        _window = fallback(point);
+                    }
                 }
             }
         }

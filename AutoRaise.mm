@@ -265,7 +265,8 @@ int main(int argc, const char * argv[]) {
             NSUserDefaults *standardDefaults = [NSUserDefaults standardUserDefaults];
             delayCount = abs((int) [standardDefaults integerForKey:@"delay"]);
         } else {
-            NSFileHandle *myFile = [NSFileHandle fileHandleForReadingAtPath:@"./AutoRaise.delay"];
+            NSString *path = [NSString stringWithFormat:@"%@/AutoRaise.delay", NSHomeDirectory()];
+            NSFileHandle *myFile = [NSFileHandle fileHandleForReadingAtPath:path];
             delayCount = abs([[[NSString alloc] initWithData:[myFile readDataOfLength:1]
                 encoding:NSUTF8StringEncoding] intValue]);
             [myFile closeFile];

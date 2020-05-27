@@ -4,7 +4,7 @@ Then double click it from within Finder. To quickly toggle it on/off you can use
 into an automator service workflow. Then bind the created service to a keyboard shortcut via
 System Preferences|Keyboard|Shortcuts.
 
-Note: If no delay has been specified on the command line, AutoRaise will look for an AutoRaise.delay file in the home
+Note: If no delay has been specified on the command line, AutoRaise will look for an AutoRaise.delay file in the _home_
 folder. This is particularly useful when using the applescript below because 'launch application' does not support
 command line arguments. The delay should be specified in units of 50ms. For example to specify a delay of 150ms run
 this command once in a terminal: 'cd ~; echo 3 > AutoRaise.delay'

@@ -1,5 +1,7 @@
 /*
- * Copyright (C) 2020 sbmpost
+ * AutoRaise - Copyright (C) 2020 sbmpost
+ * Some pieces of the code are based on
+ * metamove by jmgao as part of XFree86
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,83 +33,63 @@ static int raiseTimes = 0;
 static int delayTicks = 0;
 static int delayCount = 0;
 
-AXUIElementRef fallback(CGPoint point) {
-    AXUIElementRef _window = nullptr;
-    AXUIElementRef _element = nullptr;
-    AXUIElementRef window_owner = nullptr;
-
-    // Fallback method, find the topmost window that contains the cursor
-    NSDictionary *selected_window = nullptr;
-    NSArray *window_list = [(NSArray *)CGWindowListCopyWindowInfo(
+NSDictionary * topwindow(CGPoint point) {
+    NSDictionary * top_window = nullptr;
+    NSArray * window_list = [(NSArray *) CGWindowListCopyWindowInfo(
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
         kCGNullWindowID) autorelease];
 
-    NSRect window_bounds = NSZeroRect;
+    for (NSDictionary * window in window_list) {
+        NSDictionary * window_bounds_dict = window[(NSString *) kCGWindowBounds];
 
-    for (NSDictionary *current_window in window_list) {
-        NSDictionary *window_bounds_dict = current_window[(NSString *) kCGWindowBounds];
-
-        if (![current_window[(id)kCGWindowLayer] isEqual: @0]) {
-            continue;
-        }
+        if (![window[(id)kCGWindowLayer] isEqual: @0]) { continue; }
 
         int x = [window_bounds_dict[@"X"] intValue];
         int y = [window_bounds_dict[@"Y"] intValue];
         int width = [window_bounds_dict[@"Width"] intValue];
         int height = [window_bounds_dict[@"Height"] intValue];
-        NSRect current_window_bounds = NSMakeRect(x, y, width, height);
-        if (NSPointInRect(NSPointFromCGPoint(point), current_window_bounds)) {
-            window_bounds = current_window_bounds;
-            selected_window = current_window;
+        NSRect window_bounds = NSMakeRect(x, y, width, height);
+        if (NSPointInRect(NSPointFromCGPoint(point), window_bounds)) {
+            top_window = window;
             break;
         }
     }
 
-    if (!selected_window) {
-        // NSLog(@"Unable to find window under cursor");
-        goto exit;
-    }
+    return top_window;
+}
 
-    // Find the AXUIElement corresponding to the window via its application
-    {
-        int window_owner_pid = [selected_window[(id)kCGWindowOwnerPID] intValue];
-        window_owner = AXUIElementCreateApplication(window_owner_pid);
-        CFTypeRef windows_cf = nullptr;
-        NSArray *application_windows = nullptr;
+AXUIElementRef fallback(CGPoint point) {
+    AXUIElementRef _window = nullptr;
+    AXUIElementRef _window_owner = nullptr;
 
-        if (AXUIElementCopyAttributeValue(window_owner, kAXWindowsAttribute, &windows_cf) != kAXErrorSuccess) {
-           // NSLog(@"Failed to find window under cursor");
-           goto exit;
-        }
+    NSDictionary * top_window = topwindow(point);
+    if (top_window) {
+        _window_owner = AXUIElementCreateApplication([top_window[(id) kCGWindowOwnerPID] intValue]);
 
-        application_windows = [(NSArray *) windows_cf autorelease];
+        CFTypeRef _windows_cf = nullptr;
+        if (AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf) == kAXErrorSuccess) {
+            NSArray * application_windows = [(NSArray *) _windows_cf autorelease];
+            CGWindowID top_window_id = [top_window[(id) kCGWindowNumber] intValue];
 
-        CGWindowID selected_window_id = [selected_window[(id)kCGWindowNumber] intValue];
+            if (top_window_id) {
+                for (id application_window in application_windows) {
+                    AXUIElementRef application_window_ax = (__bridge AXUIElementRef) application_window;
+                    CGWindowID application_window_id = 0;
 
-        if (!selected_window_id) {
-            NSLog(@"Unable to get window ID for selected window");
-            goto exit;
-        }
-
-        for (id application_window in application_windows) {
-            AXUIElementRef application_window_ax = (__bridge AXUIElementRef)application_window;
-            CGWindowID application_window_id = 0;
-
-            if (_AXUIElementGetWindow(application_window_ax, &application_window_id) == kAXErrorSuccess) {
-                if (application_window_id == selected_window_id) {
-                    _element = application_window_ax;
-                    CFRetain(_element);
-                    goto exit;
+                    if (_AXUIElementGetWindow(application_window_ax, &application_window_id) == kAXErrorSuccess) {
+                        if (application_window_id == top_window_id) {
+                            _window = application_window_ax;
+                            CFRetain(_window);
+                            break;
+                        }
+                    }
                 }
-            } else {
-                // NSLog(@"Unable to get window id from AXUIElement");
             }
         }
     }
 
-exit:
-    if (window_owner) CFRelease(window_owner);
-    return _element;
+    if (_window_owner) CFRelease(_window_owner);
+    return _window;
 }
 
 AXUIElementRef window_get_from_point(CGPoint point) {
@@ -126,15 +108,16 @@ AXUIElementRef window_get_from_point(CGPoint point) {
             kAXRoleAttribute,
             (CFTypeRef *) &_element_role) == kAXErrorSuccess) {
 
-            if (CFStringCompare(kAXWindowRole, _element_role, 0) == kCFCompareEqualTo) {
+            if (CFEqual(_element_role, kAXWindowRole)) {
                 _window = _element;
                 _element = nullptr;
-            } else {
-                if (AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *)&_window) != kAXErrorSuccess) {
-                    // NSLog(@"Element role %@", _element_role);
-                    if (CFStringCompare(kAXMenuItemRole, _element_role, 0) != kCFCompareEqualTo) {
-                        _window = fallback(point);
-                    }
+            } else if (AXUIElementCopyAttributeValue(
+                _element,
+                kAXWindowAttribute,
+                (CFTypeRef *)&_window) != kAXErrorSuccess) {
+
+                if (!CFEqual(_element_role, kAXMenuItemRole)) {
+                    _window = fallback(point);
                 }
             }
         }
@@ -142,31 +125,26 @@ AXUIElementRef window_get_from_point(CGPoint point) {
 
     if (_element) { CFRelease(_element); }
     if (_element_role) { CFRelease(_element_role); }
-
     return _window;
 }
 
-// google chrome specific fix
 bool unknownRole(AXUIElementRef _focusedApp) {
-    bool unknown = false;
-    CFTypeRef _uiElement = nullptr;
+    CFTypeRef _ui_element = nullptr;
     CFStringRef _element_role = nullptr;
 
-    if (AXUIElementCopyAttributeValue(
-        _focusedApp,
-        (CFStringRef) kAXFocusedUIElementAttribute,
-        &_uiElement) == kAXErrorSuccess && _uiElement) {
-
-        unknown = AXUIElementCopyAttributeValue(
-            (AXUIElementRef) _uiElement,
+    bool unknown =
+        AXUIElementCopyAttributeValue(
+            _focusedApp,
+            (CFStringRef) kAXFocusedUIElementAttribute,
+            &_ui_element) != kAXErrorSuccess || !_ui_element ||
+        AXUIElementCopyAttributeValue(
+            (AXUIElementRef) _ui_element,
             kAXRoleAttribute,
-            (CFTypeRef *) &_element_role) == kAXErrorSuccess &&
-            CFStringCompare(kAXUnknownRole, _element_role, 0) == kCFCompareEqualTo;
-    }
+            (CFTypeRef *) &_element_role) != kAXErrorSuccess ||
+        CFEqual(_element_role, kAXUnknownRole);
 
-    if (_uiElement) { CFRelease(_uiElement); }
+    if (_ui_element) { CFRelease(_ui_element); }
     if (_element_role) { CFRelease(_element_role); }
-
     return unknown;
 }
 
@@ -280,61 +258,64 @@ const void MyClass::onTick(void * anNSTimer) {
     }
 
     // 1. mouseMoved: we have to decide if the window needs raising
-    // 2. delayTicks: start to count down if the mouse didn't move
+    // 2. delayTicks: count down as long as the mouse doesn't move
     // 3. raiseTimes: the window needs raising a couple of times.
     if (mouseMoved || delayTicks || raiseTimes) {
-        pid_t mouseWindow_pid;
         AXUIElementRef _mouseWindow = window_get_from_point(mousePoint);
-        if (_mouseWindow && AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
-            Boolean needs_raise = true;
-            CFTypeRef _focusedApp = nullptr;
-            AXUIElementCopyAttributeValue(
-                _accessibility_object,
-                (CFStringRef) kAXFocusedApplicationAttribute,
-                (CFTypeRef*) &_focusedApp);
 
-            if (_focusedApp) {
-                pid_t focusedApp_pid;
-                AXUIElementRef _focusedAppElement = (AXUIElementRef) _focusedApp;
-                if (AXUIElementGetPid(_focusedAppElement, &focusedApp_pid) == kAXErrorSuccess) {
-                    CFTypeRef _focusedWindow;
-                    if (AXUIElementCopyAttributeValue(
-                        _focusedAppElement,
-                        (CFStringRef) kAXFocusedWindowAttribute,
-                        (CFTypeRef*) &_focusedWindow) == kAXErrorSuccess && _focusedWindow) {
+        if (_mouseWindow) {
+            pid_t mouseWindow_pid;
+            if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
+                Boolean needs_raise = true;
+                CFTypeRef _focusedApp = nullptr;
+                AXUIElementCopyAttributeValue(
+                    _accessibility_object,
+                    (CFStringRef) kAXFocusedApplicationAttribute,
+                    (CFTypeRef*) &_focusedApp);
 
-                        needs_raise = !equal_window(_mouseWindow, (AXUIElementRef) _focusedWindow) &&
-                            (focusedApp_pid != mouseWindow_pid || !unknownRole(_focusedAppElement));
-
-                        CFRelease(_focusedWindow);
+                if (_focusedApp) {
+                    pid_t focusedApp_pid;
+                    if (AXUIElementGetPid((AXUIElementRef) _focusedApp, &focusedApp_pid) == kAXErrorSuccess) {
+                        CFTypeRef _focusedWindow;
+                        if (AXUIElementCopyAttributeValue(
+                            (AXUIElementRef) _focusedApp,
+                            (CFStringRef) kAXFocusedWindowAttribute,
+                            (CFTypeRef*) &_focusedWindow) == kAXErrorSuccess) {
+                            if (_focusedWindow) {
+                                needs_raise = !equal_window(_mouseWindow, (AXUIElementRef) _focusedWindow) &&
+                                    (focusedApp_pid != mouseWindow_pid || !unknownRole((AXUIElementRef) _focusedApp));
+                                CFRelease(_focusedWindow);
+                            }
+                        }
                     }
+                    CFRelease(_focusedApp);
                 }
-                CFRelease(_focusedApp);
-            }
 
-            if (needs_raise) {
-                if (!delayTicks) {
-                    // start the delay
-                    delayTicks = delayCount;
-                }
-                if (raiseTimes || delayTicks == 1) {
-                    delayTicks = 0; // disable delay
-                    if (raiseTimes) {
-                        raiseTimes--;
-                    } else {
-                        raiseTimes = 3;
+                if (needs_raise) {
+                    if (!delayTicks) {
+                        // start the delay
+                        delayTicks = delayCount;
                     }
+                    if (raiseTimes || delayTicks == 1) {
+                        delayTicks = 0; // disable delay
+                        if (raiseTimes) {
+                            raiseTimes--;
+                        } else {
+                            raiseTimes = 3;
+                        }
 
-                    if (AXUIElementPerformAction(_mouseWindow, kAXRaiseAction) == kAXErrorSuccess) {
-                        [[NSRunningApplication runningApplicationWithProcessIdentifier: mouseWindow_pid]
-                            activateWithOptions: NSApplicationActivateIgnoringOtherApps];
+                        if (AXUIElementPerformAction(_mouseWindow, kAXRaiseAction) == kAXErrorSuccess) {
+                            [[NSRunningApplication runningApplicationWithProcessIdentifier: mouseWindow_pid]
+                                activateWithOptions: NSApplicationActivateIgnoringOtherApps];
+                        }
                     }
+                } else {
+                    raiseTimes = 0;
+                    delayTicks = 0;
                 }
-            } else {
-                raiseTimes = 0;
-                delayTicks = 0;
-            }
-            CFRelease(_mouseWindow);
+
+                CFRelease(_mouseWindow); 
+           }
         } else {
             raiseTimes = 0;
             delayTicks = 0;
@@ -342,7 +323,7 @@ const void MyClass::onTick(void * anNSTimer) {
     }
 }
 
-#define POLLING_MS 50
+#define POLLING_MS 10
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         if (argc == 3) {
@@ -356,9 +337,9 @@ int main(int argc, const char * argv[]) {
             [myFile closeFile];
         }
         if (!delayCount) {
-            delayCount = 1;
+            delayCount = 2;
         }
-        printf("\nBy sbmpost(c) 2020, usage:\nAutoRaise -delay <1=%dms> (or use 'echo 1 > AutoRaise.delay')"
+        printf("\nBy sbmpost(c) 2020, usage:\nAutoRaise -delay <1=%dms> (or use 'echo 3 > ~/AutoRaise.delay')"
                "\nStarted with %d ms delay...\n", POLLING_MS, delayCount*POLLING_MS);
         NSDictionary *options = @{(id)kAXTrustedCheckOptionPrompt: @YES};
         AXIsProcessTrustedWithOptions((CFDictionaryRef)options);

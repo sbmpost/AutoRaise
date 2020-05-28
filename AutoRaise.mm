@@ -236,8 +236,8 @@ const void MyClass::onTick(void * anNSTimer) {
     CGPoint mousePoint = CGEventGetLocation(_event);
     if (_event) { CFRelease(_event); }
 
-    bool mouseMoved = fabs(mousePoint.x-oldPoint.x) > 2;
-    mouseMoved = mouseMoved || fabs(mousePoint.y-oldPoint.y) > 2;
+    bool mouseMoved = fabs(mousePoint.x-oldPoint.x) > 0;
+    mouseMoved = mouseMoved || fabs(mousePoint.y-oldPoint.y) > 0;
     oldPoint = mousePoint;
 
     // spaceHasChanged has priority

@@ -6,8 +6,8 @@ System Preferences|Keyboard|Shortcuts.
 
 Note: If no delay has been specified on the command line, AutoRaise will look for an AutoRaise.delay file in the **home**
 folder. This is particularly useful when using the applescript below because 'launch application' does not support
-command line arguments. The delay should be specified in units of 10ms. For example to specify a delay of 30ms run
-this command once in a terminal: 'echo 3 > ~/AutoRaise.delay'
+command line arguments. The delay should be specified in units of 20ms. For example to specify a delay of 60ms run
+this command once in a terminal: 'echo 2 > ~/AutoRaise.delay'
 
     on run {input, parameters}
         tell application "Finder"

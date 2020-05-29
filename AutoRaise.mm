@@ -18,7 +18,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-// g++ -o AutoRaise AutoRaise.mm -framework AppKit && ./AutoRaise
+// g++ -O3 -o AutoRaise AutoRaise.mm -framework AppKit && ./AutoRaise
 
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreFoundation/CoreFoundation.h>
@@ -126,26 +126,6 @@ AXUIElementRef window_get_from_point(CGPoint point) {
     if (_element) { CFRelease(_element); }
     if (_element_role) { CFRelease(_element_role); }
     return _window;
-}
-
-bool unknownRole(AXUIElementRef _focusedApp) {
-    CFTypeRef _ui_element = nullptr;
-    CFStringRef _element_role = nullptr;
-
-    bool unknown =
-        AXUIElementCopyAttributeValue(
-            _focusedApp,
-            (CFStringRef) kAXFocusedUIElementAttribute,
-            &_ui_element) != kAXErrorSuccess || !_ui_element ||
-        AXUIElementCopyAttributeValue(
-            (AXUIElementRef) _ui_element,
-            kAXRoleAttribute,
-            (CFTypeRef *) &_element_role) != kAXErrorSuccess ||
-        CFEqual(_element_role, kAXUnknownRole);
-
-    if (_ui_element) { CFRelease(_ui_element); }
-    if (_element_role) { CFRelease(_element_role); }
-    return unknown;
 }
 
 bool equal_window(AXUIElementRef _window1, AXUIElementRef _window2) {
@@ -282,8 +262,7 @@ const void MyClass::onTick(void * anNSTimer) {
                             (CFStringRef) kAXFocusedWindowAttribute,
                             (CFTypeRef*) &_focusedWindow) == kAXErrorSuccess) {
                             if (_focusedWindow) {
-                                needs_raise = !equal_window(_mouseWindow, (AXUIElementRef) _focusedWindow) &&
-                                    (focusedApp_pid != mouseWindow_pid || !unknownRole((AXUIElementRef) _focusedApp));
+                                needs_raise = !equal_window(_mouseWindow, (AXUIElementRef) _focusedWindow);
                                 CFRelease(_focusedWindow);
                             }
                         }
@@ -323,7 +302,7 @@ const void MyClass::onTick(void * anNSTimer) {
     }
 }
 
-#define POLLING_MS 10
+#define POLLING_MS 20
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         if (argc == 3) {
@@ -339,7 +318,7 @@ int main(int argc, const char * argv[]) {
         if (!delayCount) {
             delayCount = 2;
         }
-        printf("\nBy sbmpost(c) 2020, usage:\nAutoRaise -delay <1=%dms> (or use 'echo 3 > ~/AutoRaise.delay')"
+        printf("\nBy sbmpost(c) 2020, usage:\nAutoRaise -delay <1=%dms> (or use 'echo 2 > ~/AutoRaise.delay')"
                "\nStarted with %d ms delay...\n", POLLING_MS, delayCount*POLLING_MS);
         NSDictionary *options = @{(id)kAXTrustedCheckOptionPrompt: @YES};
         AXIsProcessTrustedWithOptions((CFDictionaryRef)options);

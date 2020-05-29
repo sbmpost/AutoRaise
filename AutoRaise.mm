@@ -299,7 +299,7 @@ int main(int argc, const char * argv[]) {
         } else {
             NSString *path = [NSString stringWithFormat:@"%@/AutoRaise.delay", NSHomeDirectory()];
             NSFileHandle *myFile = [NSFileHandle fileHandleForReadingAtPath:path];
-            delayCount = abs([[[NSString alloc] initWithData:[myFile readDataOfLength:1]
+            delayCount = abs([[[NSString alloc] initWithData:[myFile readDataOfLength:2]
                 encoding:NSUTF8StringEncoding] intValue]);
             [myFile closeFile];
         }

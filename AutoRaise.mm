@@ -18,7 +18,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-// g++ -O3 -o AutoRaise AutoRaise.mm -framework AppKit && ./AutoRaise
+// g++ -O2 -o AutoRaise AutoRaise.mm -framework AppKit && ./AutoRaise
 
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreFoundation/CoreFoundation.h>
@@ -61,21 +61,19 @@ NSDictionary * topwindow(CGPoint point) {
 AXUIElementRef fallback(CGPoint point) {
     AXUIElementRef _window = nullptr;
     AXUIElementRef _window_owner = nullptr;
+    CFTypeRef _windows_cf = nullptr;
 
     NSDictionary * top_window = topwindow(point);
     if (top_window) {
         _window_owner = AXUIElementCreateApplication([top_window[(id) kCGWindowOwnerPID] intValue]);
-
-        CFTypeRef _windows_cf = nullptr;
-        if (AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf) == kAXErrorSuccess) {
+        AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf);
+        if (_windows_cf) {
             NSArray * application_windows = [(NSArray *) _windows_cf autorelease];
             CGWindowID top_window_id = [top_window[(id) kCGWindowNumber] intValue];
-
             if (top_window_id) {
                 for (id application_window in application_windows) {
+                    CGWindowID application_window_id;
                     AXUIElementRef application_window_ax = (__bridge AXUIElementRef) application_window;
-                    CGWindowID application_window_id = 0;
-
                     if (_AXUIElementGetWindow(application_window_ax, &application_window_id) == kAXErrorSuccess) {
                         if (application_window_id == top_window_id) {
                             _window = application_window_ax;
@@ -92,40 +90,32 @@ AXUIElementRef fallback(CGPoint point) {
     return _window;
 }
 
-AXUIElementRef window_get_from_point(CGPoint point) {
-    AXUIElementRef _window = nullptr;
+AXUIElementRef get_mousewindow(CGPoint point) {
     AXUIElementRef _element = nullptr;
-    CFStringRef _element_role = nullptr;
-
-    if (AXUIElementCopyElementAtPosition(
-        _accessibility_object,
-        point.x,
-        point.y,
-        &_element) == kAXErrorSuccess) {
-
-        if (AXUIElementCopyAttributeValue(
-            _element,
-            kAXRoleAttribute,
-            (CFTypeRef *) &_element_role) == kAXErrorSuccess) {
-
+    AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
+    if (_element) {
+        CFStringRef _element_role = nullptr;
+        AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
+        if (_element_role) {
             if (CFEqual(_element_role, kAXWindowRole)) {
-                _window = _element;
-                _element = nullptr;
-            } else if (AXUIElementCopyAttributeValue(
-                _element,
-                kAXWindowAttribute,
-                (CFTypeRef *)&_window) != kAXErrorSuccess) {
-
-                if (!CFEqual(_element_role, kAXMenuItemRole)) {
+                CFRelease(_element_role);
+                return _element;
+            } else {
+                AXUIElementRef _window = nullptr;
+                AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *)&_window);
+                if (!_window && !CFEqual(_element_role, kAXMenuItemRole)) {
                     _window = fallback(point);
                 }
+                CFRelease(_element_role);
+                CFRelease(_element);
+                return _window;
             }
+        } else {
+            CFRelease(_element);
         }
     }
 
-    if (_element) { CFRelease(_element); }
-    if (_element_role) { CFRelease(_element_role); }
-    return _window;
+    return nullptr;
 }
 
 bool equal_window(AXUIElementRef _window1, AXUIElementRef _window2) {
@@ -241,8 +231,7 @@ const void MyClass::onTick(void * anNSTimer) {
     // 2. delayTicks: count down as long as the mouse doesn't move
     // 3. raiseTimes: the window needs raising a couple of times.
     if (mouseMoved || delayTicks || raiseTimes) {
-        AXUIElementRef _mouseWindow = window_get_from_point(mousePoint);
-
+        AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
         if (_mouseWindow) {
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
@@ -256,15 +245,14 @@ const void MyClass::onTick(void * anNSTimer) {
                 if (_focusedApp) {
                     pid_t focusedApp_pid;
                     if (AXUIElementGetPid((AXUIElementRef) _focusedApp, &focusedApp_pid) == kAXErrorSuccess) {
-                        CFTypeRef _focusedWindow;
-                        if (AXUIElementCopyAttributeValue(
+                        CFTypeRef _focusedWindow = nullptr;
+                        AXUIElementCopyAttributeValue(
                             (AXUIElementRef) _focusedApp,
                             (CFStringRef) kAXFocusedWindowAttribute,
-                            (CFTypeRef*) &_focusedWindow) == kAXErrorSuccess) {
-                            if (_focusedWindow) {
-                                needs_raise = !equal_window(_mouseWindow, (AXUIElementRef) _focusedWindow);
-                                CFRelease(_focusedWindow);
-                            }
+                            (CFTypeRef*) &_focusedWindow);
+                        if (_focusedWindow) {
+                            needs_raise = !equal_window(_mouseWindow, (AXUIElementRef) _focusedWindow);
+                            CFRelease(_focusedWindow);
                         }
                     }
                     CFRelease(_focusedApp);

@@ -29,9 +29,12 @@ extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out) __attr
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
+static bool appWasActivated = false;
 static int raiseTimes = 0;
 static int delayTicks = 0;
 static int delayCount = 0;
+
+//---------------------------------------------helper methods-----------------------------------------------
 
 NSDictionary * topwindow(CGPoint point) {
     NSDictionary * top_window = nullptr;
@@ -73,8 +76,11 @@ AXUIElementRef fallback(CGPoint point) {
             if (top_window_id) {
                 for (id application_window in application_windows) {
                     CGWindowID application_window_id;
-                    AXUIElementRef application_window_ax = (__bridge AXUIElementRef) application_window;
-                    if (_AXUIElementGetWindow(application_window_ax, &application_window_id) == kAXErrorSuccess) {
+                    AXUIElementRef application_window_ax =
+                        (__bridge AXUIElementRef) application_window;
+                    if (_AXUIElementGetWindow(
+                        application_window_ax,
+                        &application_window_id) == kAXErrorSuccess) {
                         if (application_window_id == top_window_id) {
                             _window = application_window_ax;
                             CFRetain(_window);
@@ -120,12 +126,32 @@ AXUIElementRef get_mousewindow(CGPoint point) {
     return nullptr;
 }
 
-bool equal_window(AXUIElementRef _window1, AXUIElementRef _window2) {
-    CGWindowID window1_id, window2_id;
-    _AXUIElementGetWindow(_window1, &window1_id);
-    _AXUIElementGetWindow(_window2, &window2_id);
-    return window1_id == window2_id;
+CGPoint get_mousepoint(AXUIElementRef _window) {
+    CGPoint mousepoint = {0, 0};
+    AXValueRef _size = nullptr;
+    AXValueRef _pos = nullptr;
+
+    AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
+    AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
+
+    if (_size) {
+        if (_pos) {
+            CGSize cg_size;
+            CGPoint cg_pos;
+            if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size) &&
+                AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
+                mousepoint.x = cg_pos.x + (cg_size.width / 2);
+                mousepoint.y = cg_pos.y + (cg_size.height / 2);
+            }
+            CFRelease(_pos);
+        }
+        CFRelease(_size);
+    }
+
+    return mousepoint;
 }
+
+//-----------------------------------------timer & notifications--------------------------------------------
 
 class MyClass {
 private:
@@ -133,9 +159,10 @@ private:
 public:
     MyClass();
     ~MyClass();
-    const void spaceChanged(void * anNSnotification);
+    const void spaceChanged(NSNotification * notification);
+    const void appActivated(NSNotification * notification);
     void startTimer(float timerInterval);
-    const void onTick(void * anNSTimer);
+    const void onTick(NSTimer * timer);
 };
 
 @interface MDWorkspaceWatcher : NSObject {
@@ -151,10 +178,17 @@ public:
     myTimer = nil;
     if ((self = [super init])) {
         myClass = aMyClass;
-        [[[NSWorkspace sharedWorkspace] notificationCenter]
+        NSNotificationCenter * center =
+            [[NSWorkspace sharedWorkspace] notificationCenter];
+        [center
             addObserver:self
             selector:@selector(spaceChanged:)
             name:NSWorkspaceActiveSpaceDidChangeNotification
+            object:nil];
+        [center
+            addObserver:self
+            selector:@selector(appActivated:)
+            name:NSWorkspaceDidActivateApplicationNotification
             object:nil];
     }
     return self;
@@ -164,9 +198,7 @@ public:
     NSInvocation * inv = [NSInvocation invocationWithMethodSignature: sgn];
     [inv setTarget: self];
     [inv setSelector: @selector(onTick:)];
-    if (myTimer) {
-        [myTimer invalidate];
-    }
+    if (myTimer) { [myTimer invalidate]; }
     myTimer = [NSTimer timerWithTimeInterval: timerInterval invocation:inv repeats:YES];
     [[NSRunLoop mainRunLoop] addTimer: myTimer forMode:NSRunLoopCommonModes];
 }
@@ -176,6 +208,9 @@ public:
 }
 - (void)spaceChanged:(NSNotification *)notification {
     myClass->spaceChanged(notification);
+}
+- (void)appActivated:(NSNotification *)notification {
+    myClass->appActivated(notification);
 }
 - (void)onTick:(NSTimer *)timer {
     myClass->onTick(timer);
@@ -191,17 +226,57 @@ MyClass::~MyClass() {
 void MyClass::startTimer(float timerInterval) {
     [(MDWorkspaceWatcher *) workspaceWatcher startTimer: timerInterval];
 }
-const void MyClass::spaceChanged(void * anNSNotification) {
+const void MyClass::spaceChanged(NSNotification * notification) {
     spaceHasChanged = true;
     oldPoint.x = oldPoint.y = 0;
 }
-const void MyClass::onTick(void * anNSTimer) {
+
+//------------------------------------------where it all happens--------------------------------------------
+
+const void MyClass::appActivated(NSNotification * notification) {
+    CGEventRef _event = CGEventCreate(NULL);
+    CGPoint mousePoint = CGEventGetLocation(_event);
+    if (_event) { CFRelease(_event); }
+
+    bool mouseMoved = fabs(mousePoint.x-oldPoint.x) > 0;
+    mouseMoved = mouseMoved || fabs(mousePoint.y-oldPoint.y) > 0;
+    if (mouseMoved) { return; }
+
+    appWasActivated = true;
+    pid_t application_pid = ((NSRunningApplication *) ((NSWorkspace *)
+        notification.object).frontmostApplication).processIdentifier;
+
+    bool needs_warp = true;
+    AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
+    if (_mouseWindow) {
+        pid_t mouseWindow_pid;
+        if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
+            needs_warp = mouseWindow_pid != application_pid;
+        }
+        CFRelease(_mouseWindow);
+    }
+
+    if (needs_warp) {
+        AXUIElementRef _focusedApp = AXUIElementCreateApplication(application_pid);
+        CFTypeRef _focusedWindow = nullptr;
+        AXUIElementCopyAttributeValue(
+            (AXUIElementRef) _focusedApp,
+            kAXFocusedWindowAttribute,
+            &_focusedWindow);
+        CFRelease(_focusedApp);
+
+        if (_focusedWindow) {
+            CGWarpMouseCursorPosition(get_mousepoint((AXUIElementRef) _focusedWindow));
+            CFRelease(_focusedWindow);
+        }
+    }
+}
+
+const void MyClass::onTick(NSTimer * timer) {
     // delayTicks = 0 -> delay disabled
     // delayTicks = 1 -> delay finished
     // delayTicks = n -> delay started
-    if (delayTicks > 1) {
-        delayTicks--;
-    }
+    if (delayTicks > 1) { delayTicks--; }
     
     // determine if mouseMoved
     CGEventRef _event = CGEventCreate(NULL);
@@ -212,12 +287,13 @@ const void MyClass::onTick(void * anNSTimer) {
     mouseMoved = mouseMoved || fabs(mousePoint.y-oldPoint.y) > 0;
     oldPoint = mousePoint;
 
-    // spaceHasChanged has priority
-    // over waiting for the delay
-    if (spaceHasChanged) {
-        if (mouseMoved) {
-            return;
-        }
+    if (appWasActivated) {
+        appWasActivated = false;
+        return;
+    } else if (spaceHasChanged) {
+        // spaceHasChanged has priority
+        // over waiting for the delay
+        if (mouseMoved) { return; }
         raiseTimes = 3;
         delayTicks = 0;
         spaceHasChanged = false;
@@ -241,20 +317,26 @@ const void MyClass::onTick(void * anNSTimer) {
                 CFTypeRef _focusedApp = nullptr;
                 AXUIElementCopyAttributeValue(
                     _accessibility_object,
-                    (CFStringRef) kAXFocusedApplicationAttribute,
-                    (CFTypeRef*) &_focusedApp);
+                    kAXFocusedApplicationAttribute,
+                    &_focusedApp);
 
                 if (_focusedApp) {
                     pid_t focusedApp_pid;
-                    if (AXUIElementGetPid((AXUIElementRef) _focusedApp, &focusedApp_pid) == kAXErrorSuccess) {
+                    if (AXUIElementGetPid(
+                        (AXUIElementRef) _focusedApp,
+                        &focusedApp_pid) == kAXErrorSuccess) {
                         CFTypeRef _focusedWindow = nullptr;
                         AXUIElementCopyAttributeValue(
                             (AXUIElementRef) _focusedApp,
-                            (CFStringRef) kAXFocusedWindowAttribute,
-                            (CFTypeRef*) &_focusedWindow);
+                            kAXFocusedWindowAttribute,
+                            &_focusedWindow);
+
                         if (_focusedWindow) {
-                            needs_raise = !equal_window(_mouseWindow, (AXUIElementRef) _focusedWindow);
+                            CGWindowID window1_id, window2_id;
+                            _AXUIElementGetWindow(_mouseWindow, &window1_id);
+                            _AXUIElementGetWindow((AXUIElementRef) _focusedWindow, &window2_id);
                             CFRelease(_focusedWindow);
+                            needs_raise = window1_id != window2_id;
                         }
                     }
                     CFRelease(_focusedApp);
@@ -267,12 +349,11 @@ const void MyClass::onTick(void * anNSTimer) {
                     }
                     if (raiseTimes || delayTicks == 1) {
                         delayTicks = 0; // disable delay
-                        if (raiseTimes) {
-                            raiseTimes--;
-                        } else {
-                            raiseTimes = 3;
-                        }
 
+                        if (raiseTimes) { raiseTimes--; }
+                        else { raiseTimes = 3; }
+
+                        // raise mousewindow
                         if (AXUIElementPerformAction(_mouseWindow, kAXRaiseAction) == kAXErrorSuccess) {
                             [[NSRunningApplication runningApplicationWithProcessIdentifier: mouseWindow_pid]
                                 activateWithOptions: NSApplicationActivateIgnoringOtherApps];
@@ -296,21 +377,22 @@ const void MyClass::onTick(void * anNSTimer) {
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         if (argc == 3) {
-            NSUserDefaults *standardDefaults = [NSUserDefaults standardUserDefaults];
+            NSUserDefaults * standardDefaults = [NSUserDefaults standardUserDefaults];
             delayCount = abs((int) [standardDefaults integerForKey:@"delay"]);
         } else {
-            NSString *path = [NSString stringWithFormat:@"%@/AutoRaise.delay", NSHomeDirectory()];
-            NSFileHandle *myFile = [NSFileHandle fileHandleForReadingAtPath:path];
+            NSString * path = [NSString stringWithFormat:@"%@/AutoRaise.delay", NSHomeDirectory()];
+            NSFileHandle * myFile = [NSFileHandle fileHandleForReadingAtPath:path];
             delayCount = abs([[[NSString alloc] initWithData:[myFile readDataOfLength:2]
                 encoding:NSUTF8StringEncoding] intValue]);
             [myFile closeFile];
         }
-        if (!delayCount) {
-            delayCount = 2;
-        }
-        printf("\nBy sbmpost(c) 2020, usage:\nAutoRaise -delay <1=%dms> (or use 'echo 2 > ~/AutoRaise.delay')"
-               "\nStarted with %d ms delay...\n", POLLING_MS, delayCount*POLLING_MS);
-        NSDictionary *options = @{(id)kAXTrustedCheckOptionPrompt: @YES};
+        if (!delayCount) { delayCount = 2; }
+
+        printf("\nBy sbmpost(c) 2020, usage:\nAutoRaise -delay <1=%dms> "
+               "(or use 'echo 2 > ~/AutoRaise.delay')\nStarted with %d ms delay...\n",
+               POLLING_MS, delayCount*POLLING_MS);
+
+        NSDictionary * options = @{(id)kAXTrustedCheckOptionPrompt: @YES};
         AXIsProcessTrustedWithOptions((CFDictionaryRef)options);
         MyClass myClass = MyClass();
         myClass.startTimer(POLLING_MS/1000.0);

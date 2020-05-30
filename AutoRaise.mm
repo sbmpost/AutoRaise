@@ -113,6 +113,8 @@ AXUIElementRef get_mousewindow(CGPoint point) {
         } else {
             CFRelease(_element);
         }
+    } else {
+        return fallback(point);
     }
 
     return nullptr;

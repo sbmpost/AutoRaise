@@ -246,28 +246,28 @@ const void MyClass::appActivated(NSNotification * notification) {
     pid_t application_pid = ((NSRunningApplication *) ((NSWorkspace *)
         notification.object).frontmostApplication).processIdentifier;
 
-    bool needs_warp = true;
     AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
     if (_mouseWindow) {
+        bool needs_warp = true;
         pid_t mouseWindow_pid;
         if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
             needs_warp = mouseWindow_pid != application_pid;
         }
         CFRelease(_mouseWindow);
-    }
 
-    if (needs_warp) {
-        AXUIElementRef _focusedApp = AXUIElementCreateApplication(application_pid);
-        CFTypeRef _focusedWindow = nullptr;
-        AXUIElementCopyAttributeValue(
-            (AXUIElementRef) _focusedApp,
-            kAXFocusedWindowAttribute,
-            &_focusedWindow);
-        CFRelease(_focusedApp);
+        if (needs_warp) {
+            AXUIElementRef _focusedApp = AXUIElementCreateApplication(application_pid);
+            CFTypeRef _focusedWindow = nullptr;
+            AXUIElementCopyAttributeValue(
+                (AXUIElementRef) _focusedApp,
+                kAXFocusedWindowAttribute,
+                &_focusedWindow);
+            CFRelease(_focusedApp);
 
-        if (_focusedWindow) {
-            CGWarpMouseCursorPosition(get_mousepoint((AXUIElementRef) _focusedWindow));
-            CFRelease(_focusedWindow);
+            if (_focusedWindow) {
+                CGWarpMouseCursorPosition(get_mousepoint((AXUIElementRef) _focusedWindow));
+                CFRelease(_focusedWindow);
+            }
         }
     }
 }

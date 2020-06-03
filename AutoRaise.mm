@@ -18,7 +18,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-// g++ -O2 -o AutoRaise AutoRaise.mm -framework AppKit && ./AutoRaise
+// g++ -O2 -Wall -fobjc-arc -o AutoRaise AutoRaise.mm -framework AppKit && ./AutoRaise
 
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreFoundation/CoreFoundation.h>
@@ -38,14 +38,14 @@ static int delayCount = 0;
 
 NSDictionary * topwindow(CGPoint point) {
     NSDictionary * top_window = nullptr;
-    NSArray * window_list = [(NSArray *) CGWindowListCopyWindowInfo(
+    NSArray * window_list = (NSArray *) CFBridgingRelease(CGWindowListCopyWindowInfo(
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
-        kCGNullWindowID) autorelease];
+        kCGNullWindowID));
 
     for (NSDictionary * window in window_list) {
-        NSDictionary * window_bounds_dict = window[(NSString *) kCGWindowBounds];
+        NSDictionary * window_bounds_dict = window[(NSString *) CFBridgingRelease(kCGWindowBounds)];
 
-        if (![window[(id)kCGWindowLayer] isEqual: @0]) { continue; }
+        if (![window[(id) kCGWindowLayer] isEqual: @0]) { continue; }
 
         int x = [window_bounds_dict[@"X"] intValue];
         int y = [window_bounds_dict[@"Y"] intValue];
@@ -63,15 +63,14 @@ NSDictionary * topwindow(CGPoint point) {
 
 AXUIElementRef fallback(CGPoint point) {
     AXUIElementRef _window = nullptr;
-    AXUIElementRef _window_owner = nullptr;
-    CFTypeRef _windows_cf = nullptr;
-
     NSDictionary * top_window = topwindow(point);
     if (top_window) {
-        _window_owner = AXUIElementCreateApplication([top_window[(id) kCGWindowOwnerPID] intValue]);
+        CFTypeRef _windows_cf = nullptr;
+        AXUIElementRef _window_owner = AXUIElementCreateApplication([top_window[(id) kCGWindowOwnerPID] intValue]);
         AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf);
+        CFRelease(_window_owner);
         if (_windows_cf) {
-            NSArray * application_windows = [(NSArray *) _windows_cf autorelease];
+            NSArray * application_windows = (NSArray *) CFBridgingRelease(_windows_cf);
             CGWindowID top_window_id = [top_window[(id) kCGWindowNumber] intValue];
             if (top_window_id) {
                 for (id application_window in application_windows) {
@@ -92,7 +91,6 @@ AXUIElementRef fallback(CGPoint point) {
         }
     }
 
-    if (_window_owner) CFRelease(_window_owner);
     return _window;
 }
 
@@ -103,7 +101,10 @@ AXUIElementRef get_mousewindow(CGPoint point) {
         CFStringRef _element_role = nullptr;
         AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
         if (_element_role) {
-            if (CFEqual(_element_role, kAXWindowRole)) {
+            if (CFEqual(_element_role, kAXDockItemRole)) {
+                CFRelease(_element_role);
+                CFRelease(_element);
+            } else if (CFEqual(_element_role, kAXWindowRole)) {
                 CFRelease(_element_role);
                 return _element;
             } else {
@@ -132,9 +133,8 @@ CGPoint get_mousepoint(AXUIElementRef _window) {
     AXValueRef _pos = nullptr;
 
     AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
-    AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
-
     if (_size) {
+        AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
         if (_pos) {
             CGSize cg_size;
             CGPoint cg_pos;
@@ -151,60 +151,48 @@ CGPoint get_mousepoint(AXUIElementRef _window) {
     return mousepoint;
 }
 
-//-----------------------------------------timer & notifications--------------------------------------------
+//-----------------------------------------------notifications----------------------------------------------
+
+class MyClass;
+@interface MDWorkspaceWatcher : NSObject {
+    MyClass * myClass;
+}
+- (id)initWithMyClass:(MyClass *)aMyClass;
+@end
 
 class MyClass {
 private:
-    void * workspaceWatcher;
+    MDWorkspaceWatcher * workspaceWatcher;
 public:
     MyClass();
     ~MyClass();
     const void spaceChanged(NSNotification * notification);
     const void appActivated(NSNotification * notification);
     void startTimer(float timerInterval);
-    const void onTick(NSTimer * timer);
+    const void onTick();
 };
-
-@interface MDWorkspaceWatcher : NSObject {
-    MyClass * myClass;
-    NSTimer * myTimer;
-}
-- (id)initWithMyClass:(MyClass *)aMyClass;
-- (void)startTimer:(float)timerInterval;
-@end
 
 @implementation MDWorkspaceWatcher
 - (id)initWithMyClass:(MyClass *)aMyClass {
-    myTimer = nil;
     if ((self = [super init])) {
         myClass = aMyClass;
         NSNotificationCenter * center =
             [[NSWorkspace sharedWorkspace] notificationCenter];
         [center
-            addObserver:self
-            selector:@selector(spaceChanged:)
-            name:NSWorkspaceActiveSpaceDidChangeNotification
-            object:nil];
+            addObserver: self
+            selector: @selector(spaceChanged:)
+            name: NSWorkspaceActiveSpaceDidChangeNotification
+            object: nil];
         [center
-            addObserver:self
-            selector:@selector(appActivated:)
-            name:NSWorkspaceDidActivateApplicationNotification
-            object:nil];
+            addObserver: self
+            selector: @selector(appActivated:)
+            name: NSWorkspaceDidActivateApplicationNotification
+            object: nil];
     }
     return self;
 }
-- (void)startTimer:(float)timerInterval {
-    NSMethodSignature * sgn = [self methodSignatureForSelector:@selector(onTick:)];
-    NSInvocation * inv = [NSInvocation invocationWithMethodSignature: sgn];
-    [inv setTarget: self];
-    [inv setSelector: @selector(onTick:)];
-    if (myTimer) { [myTimer invalidate]; }
-    myTimer = [NSTimer timerWithTimeInterval: timerInterval invocation:inv repeats:YES];
-    [[NSRunLoop mainRunLoop] addTimer: myTimer forMode:NSRunLoopCommonModes];
-}
 - (void)dealloc {
-    [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver:self];
-    [super dealloc];
+    [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver: self];
 }
 - (void)spaceChanged:(NSNotification *)notification {
     myClass->spaceChanged(notification);
@@ -212,19 +200,18 @@ public:
 - (void)appActivated:(NSNotification *)notification {
     myClass->appActivated(notification);
 }
-- (void)onTick:(NSTimer *)timer {
-    myClass->onTick(timer);
+- (void)onTick:(NSNumber *)timerInterval {
+    [self performSelector:@selector(onTick:) withObject:timerInterval afterDelay:timerInterval.floatValue];
+    myClass->onTick();
 }
 @end
 
 MyClass::MyClass() {
-    workspaceWatcher = [[MDWorkspaceWatcher alloc] initWithMyClass:this];
+    workspaceWatcher = [[MDWorkspaceWatcher alloc] initWithMyClass: this];
 }
-MyClass::~MyClass() {
-    [(MDWorkspaceWatcher *) workspaceWatcher release];
-}
+MyClass::~MyClass() {}
 void MyClass::startTimer(float timerInterval) {
-    [(MDWorkspaceWatcher *) workspaceWatcher startTimer: timerInterval];
+    [(MDWorkspaceWatcher *) workspaceWatcher onTick: [NSNumber numberWithFloat: timerInterval]];
 }
 const void MyClass::spaceChanged(NSNotification * notification) {
     spaceHasChanged = true;
@@ -272,12 +259,12 @@ const void MyClass::appActivated(NSNotification * notification) {
     }
 }
 
-const void MyClass::onTick(NSTimer * timer) {
+const void MyClass::onTick() {
     // delayTicks = 0 -> delay disabled
     // delayTicks = 1 -> delay finished
     // delayTicks = n -> delay started
     if (delayTicks > 1) { delayTicks--; }
-    
+
     // determine if mouseMoved
     CGEventRef _event = CGEventCreate(NULL);
     CGPoint mousePoint = CGEventGetLocation(_event);
@@ -363,9 +350,8 @@ const void MyClass::onTick(NSTimer * timer) {
                     raiseTimes = 0;
                     delayTicks = 0;
                 }
-
-                CFRelease(_mouseWindow); 
-           }
+            }
+            CFRelease(_mouseWindow);
         } else {
             raiseTimes = 0;
             delayTicks = 0;
@@ -373,18 +359,20 @@ const void MyClass::onTick(NSTimer * timer) {
     }
 }
 
-#define POLLING_MS 20
+#define POLLING_MS 15
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         if (argc == 3) {
             NSUserDefaults * standardDefaults = [NSUserDefaults standardUserDefaults];
-            delayCount = abs((int) [standardDefaults integerForKey:@"delay"]);
+            delayCount = abs((int) [standardDefaults integerForKey: @"delay"]);
         } else {
-            NSString * path = [NSString stringWithFormat:@"%@/AutoRaise.delay", NSHomeDirectory()];
-            NSFileHandle * myFile = [NSFileHandle fileHandleForReadingAtPath:path];
-            delayCount = abs([[[NSString alloc] initWithData:[myFile readDataOfLength:2]
-                encoding:NSUTF8StringEncoding] intValue]);
-            [myFile closeFile];
+            NSString * path = [NSString stringWithFormat: @"%@/AutoRaise.delay", NSHomeDirectory()];
+            NSFileHandle * myFile = [NSFileHandle fileHandleForReadingAtPath: path];
+            if (myFile) {
+                delayCount = abs([[[NSString alloc] initWithData: [myFile readDataOfLength: 2]
+                    encoding: NSUTF8StringEncoding] intValue]);
+                [myFile closeFile];
+            }
         }
         if (!delayCount) { delayCount = 2; }
 
@@ -392,8 +380,9 @@ int main(int argc, const char * argv[]) {
                "(or use 'echo 2 > ~/AutoRaise.delay')\nStarted with %d ms delay...\n",
                POLLING_MS, delayCount*POLLING_MS);
 
-        NSDictionary * options = @{(id)kAXTrustedCheckOptionPrompt: @YES};
-        AXIsProcessTrustedWithOptions((CFDictionaryRef)options);
+        NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
+        AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);
+
         MyClass myClass = MyClass();
         myClass.startTimer(POLLING_MS/1000.0);
         [[NSApplication sharedApplication] run];

@@ -4,13 +4,7 @@ also an option to warp the mouse to the center of the activated window. To use i
 To quickly toggle it on/off you can use the applescript below and paste it into an automator service workflow. Then
 bind the created service to a keyboard shortcut via System Preferences|Keyboard|Shortcuts.
 
-example command line usage: ./AutoRaise -delay 2 -warp
-
-Note1: If no delay has been specified on the command line, AutoRaise will look for an AutoRaise.delay and
-AutoRaise.warp file in the **home** folder. This is particularly useful when using the applescript below because
-'launch application' does not support command line arguments. The delay should be specified in units of 20ms. For
-example to specify a delay of 60ms run this command once in a terminal: 'echo 2 > ~/AutoRaise.delay'. And to enable
-the warp option, you can type: 'touch ~/AutoRaise.warp'.
+Applescript usage:
 
     on run {input, parameters}
         tell application "Finder"
@@ -24,6 +18,14 @@ the warp option, you can type: 'touch ~/AutoRaise.warp'.
         end tell
         return input
     end run
+
+Command line usage: ./AutoRaise -delay 2 -warp
+
+Note1: If no delay has been specified on the command line, AutoRaise will look for an AutoRaise.delay and
+AutoRaise.warp file in the **home** folder. This is particularly useful when using the applescript below because
+'launch application' does not support command line arguments. The delay should be specified in units of 20ms. For
+example to specify a delay of 60ms run this command once in a terminal: 'echo 2 > ~/AutoRaise.delay'. And to enable
+the warp option, you can type: 'touch ~/AutoRaise.warp'.
 
 Note2: If you are not comfortable running the binary, then you can compile AutoRaise yourself using this command:
 

@@ -19,7 +19,9 @@ Applescript usage:
         return input
     end run
 
-Command line usage: ./AutoRaise -delay 2 -warp
+Command line usage:
+
+    ./AutoRaise -delay 2 -warp
 
 Note1: If no delay has been specified on the command line, AutoRaise will look for an AutoRaise.delay and
 AutoRaise.warp file in the **home** folder. This is particularly useful when using the applescript below because

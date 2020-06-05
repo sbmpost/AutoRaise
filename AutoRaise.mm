@@ -30,6 +30,7 @@ static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
 static bool appWasActivated = false;
+static bool warpMouse = false;
 static int raiseTimes = 0;
 static int delayTicks = 0;
 static int delayCount = 0;
@@ -183,11 +184,13 @@ public:
             selector: @selector(spaceChanged:)
             name: NSWorkspaceActiveSpaceDidChangeNotification
             object: nil];
-        [center
-            addObserver: self
-            selector: @selector(appActivated:)
-            name: NSWorkspaceDidActivateApplicationNotification
-            object: nil];
+        if (warpMouse) {
+            [center
+                addObserver: self
+                selector: @selector(appActivated:)
+                name: NSWorkspaceDidActivateApplicationNotification
+                object: nil];
+        }
     }
     return self;
 }
@@ -240,11 +243,10 @@ const void MyClass::appActivated(NSNotification * notification) {
         if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
             needs_warp = mouseWindow_pid != application_pid;
         }
-        CFRelease(_mouseWindow);
 
         if (needs_warp) {
-            AXUIElementRef _focusedApp = AXUIElementCreateApplication(application_pid);
             CFTypeRef _focusedWindow = nullptr;
+            AXUIElementRef _focusedApp = AXUIElementCreateApplication(application_pid);
             AXUIElementCopyAttributeValue(
                 (AXUIElementRef) _focusedApp,
                 kAXFocusedWindowAttribute,
@@ -256,6 +258,7 @@ const void MyClass::appActivated(NSNotification * notification) {
                 CFRelease(_focusedWindow);
             }
         }
+        CFRelease(_mouseWindow);
     }
 }
 
@@ -359,26 +362,35 @@ const void MyClass::onTick() {
     }
 }
 
-#define POLLING_MS 15
+#define POLLING_MS 20
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
-        if (argc == 3) {
+        if (argc >= 3) {
             NSUserDefaults * standardDefaults = [NSUserDefaults standardUserDefaults];
             delayCount = abs((int) [standardDefaults integerForKey: @"delay"]);
+            warpMouse = argc != 3 && strcmp(argv[3], "-warp") == 0;
         } else {
-            NSString * path = [NSString stringWithFormat: @"%@/AutoRaise.delay", NSHomeDirectory()];
-            NSFileHandle * myFile = [NSFileHandle fileHandleForReadingAtPath: path];
-            if (myFile) {
-                delayCount = abs([[[NSString alloc] initWithData: [myFile readDataOfLength: 2]
-                    encoding: NSUTF8StringEncoding] intValue]);
-                [myFile closeFile];
+            NSString * home = NSHomeDirectory();
+            NSFileHandle * delayFile = [NSFileHandle fileHandleForReadingAtPath:
+                [NSString stringWithFormat: @"%@/AutoRaise.delay", home]];
+            if (delayFile) {
+                delayCount = abs([[[NSString alloc] initWithData:
+                    [delayFile readDataOfLength: 2] encoding:
+                    NSUTF8StringEncoding] intValue]);
+                [delayFile closeFile];
+            }
+            NSFileHandle * warpFile = [NSFileHandle fileHandleForReadingAtPath:
+                [NSString stringWithFormat: @"%@/AutoRaise.warp", home]];
+            if (warpFile) {
+                warpMouse = true;
+                [warpFile closeFile];
             }
         }
         if (!delayCount) { delayCount = 2; }
 
-        printf("\nBy sbmpost(c) 2020, usage:\nAutoRaise -delay <1=%dms> "
-               "(or use 'echo 2 > ~/AutoRaise.delay')\nStarted with %d ms delay...\n",
-               POLLING_MS, delayCount*POLLING_MS);
+        printf("\nBy sbmpost(c) 2020, usage:\nAutoRaise -delay <1=%dms> [-warp]"
+               "\nStarted with %d ms delay, warp: %s\n", POLLING_MS,
+               delayCount*POLLING_MS, warpMouse ? "true" : "false");
 
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
         AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);

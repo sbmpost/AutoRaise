@@ -27,7 +27,7 @@ Note1: If no delay has been specified on the command line, AutoRaise will look f
 AutoRaise.warp file in the **home** folder. This is particularly useful for the applescript usage above because
 'launch application' does not support command line arguments. The delay should be specified in units of 20ms. For
 example to specify a delay of 40ms run this command once in a terminal: 'echo 2 > ~/AutoRaise.delay'. To enable
-the warp option, run this command: 'touch ~/AutoRaise.warp'.
+warp, run this command: 'touch ~/AutoRaise.warp'.
 
 Note2: If you are not comfortable running the provided binary, then you can compile it yourself using this command:
 

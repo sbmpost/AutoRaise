@@ -1,5 +1,5 @@
 When you hover a window it will be raised to the front (with a delay of your choosing) and gets the focus. There is
-also an option to warp the mouse to the center of the activated window (using cmd-tab key combination for example).
+also an option to warp the mouse to the center of the activated window, using the cmd-tab key combination for example.
 To use this tool, copy the AutoRaise binary to your /Applications/ folder making sure it is executable (chmod 700 AutoRaise). Then double click it from within Finder. To quickly toggle it on/off you can use the applescript below
 and paste it into an automator service workflow. Then bind the created service to a keyboard shortcut via System Preferences|Keyboard|Shortcuts.
 

@@ -31,6 +31,8 @@ static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
 static bool appWasActivated = false;
 static bool warpMouse = false;
+static float warpX = 0.5;
+static float warpY = 0.5;
 static int raiseTimes = 0;
 static int delayTicks = 0;
 static int delayCount = 0;
@@ -141,8 +143,8 @@ CGPoint get_mousepoint(AXUIElementRef _window) {
             CGPoint cg_pos;
             if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size) &&
                 AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
-                mousepoint.x = cg_pos.x + (cg_size.width / 2);
-                mousepoint.y = cg_pos.y + (cg_size.height / 2);
+                mousepoint.x = cg_pos.x + (cg_size.width * warpX);
+                mousepoint.y = cg_pos.y + (cg_size.height * warpY);
             }
             CFRelease(_pos);
         }
@@ -368,7 +370,11 @@ int main(int argc, const char * argv[]) {
         if (argc >= 3) {
             NSUserDefaults * standardDefaults = [NSUserDefaults standardUserDefaults];
             delayCount = abs((int) [standardDefaults integerForKey: @"delay"]);
-            warpMouse = argc != 3 && strcmp(argv[3], "-warp") == 0;
+            warpMouse = argc != 3 ;
+            if (argc >= 7) {
+                warpX = [standardDefaults floatForKey: @"warpX"];
+                warpY = [standardDefaults floatForKey: @"warpY"];
+            }
         } else {
             NSString * home = NSHomeDirectory();
             NSFileHandle * delayFile = [NSFileHandle fileHandleForReadingAtPath:
@@ -383,14 +389,22 @@ int main(int argc, const char * argv[]) {
                 [NSString stringWithFormat: @"%@/AutoRaise.warp", home]];
             if (warpFile) {
                 warpMouse = true;
+                NSString * line = [[NSString alloc] initWithData:
+                    [warpFile readDataOfLength:7] encoding:
+                    NSUTF8StringEncoding];
+                NSArray * components = [line componentsSeparatedByString: @" "];
+                if (components.count) {
+                    warpX = [components.firstObject floatValue];
+                    warpY = [components.lastObject floatValue];
+                }
                 [warpFile closeFile];
             }
         }
         if (!delayCount) { delayCount = 2; }
 
-        printf("\nBy sbmpost(c) 2020, usage:\nAutoRaise -delay <1=%dms> [-warp]"
-               "\nStarted with %d ms delay, warp: %s\n", POLLING_MS,
-               delayCount*POLLING_MS, warpMouse ? "true" : "false");
+        printf("\nBy sbmpost(c) 2020, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5>]"
+               "\nStarted with %d ms delay%s", POLLING_MS, delayCount*POLLING_MS, warpMouse ? ", " : "\n");
+        if (warpMouse) { printf("warpX: %.1f, warpY: %.1f\n", warpX, warpY); }
 
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
         AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);

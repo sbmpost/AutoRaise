@@ -1,7 +1,9 @@
 When you hover a window it will be raised to the front (with a delay of your choosing) and gets the focus. There is
 also an option to warp the mouse to the center of the activated window, using the cmd-tab key combination for example.
-To use this tool, copy the AutoRaise binary to your /Applications/ folder making sure it is executable (chmod 700 AutoRaise). Then double click it from within Finder. To quickly toggle it on/off you can use the applescript below
-and paste it into an automator service workflow. Then bind the created service to a keyboard shortcut via System Preferences|Keyboard|Shortcuts.
+To use this tool, copy the AutoRaise binary to your /Applications/ folder making sure it is executable (chmod 700
+AutoRaise). Then double click it from within Finder. To quickly toggle it on/off you can use the applescript below
+and paste it into an automator service workflow. Then bind the created service to a keyboard shortcut via System
+Preferences|Keyboard|Shortcuts.
 
 Applescript usage:
 
@@ -20,9 +22,18 @@ Applescript usage:
 
 Command line usage:
 
-    ./AutoRaise -delay 2 -warp
+    ./AutoRaise -delay 2 -warpX 0.5 -warpY 0.5
 
-*Note1*: If no delay has been specified on the command line, AutoRaise will look for an AutoRaise.delay file in the **home** folder. It will also check for the existence of an AutoRaise.warp file. This is particularly useful for the applescript usage as described above because 'launch application' does not support command line arguments. The delay should be specified in units of 20ms. For example to specify a delay of 20ms run this command once in a terminal: 'echo 1 > ~/AutoRaise.delay'. To enable warp, run this command: 'touch ~/AutoRaise.warp'.
+*Note1*: If no delay has been specified on the command line, AutoRaise will look for an AutoRaise.delay file in the
+**home** folder. It will also check for the existence of an AutoRaise.warp file. This is particularly useful for the
+applescript usage as described above because 'launch application' does not support command line arguments. The delay
+should be specified in units of 20ms. For example to specify a delay of 20ms run this command once in a terminal:
+
+    'echo 1 > ~/AutoRaise.delay'.
+
+To enable warp, run this command:
+
+    'echo "0.5 0.5" > ~/AutoRaise.warp'.
 
 *Note2*: If you are not comfortable running the provided binary, then you can compile it yourself using this command:
 

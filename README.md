@@ -29,11 +29,11 @@ Command line usage:
 applescript usage as described above because 'launch application' does not support command line arguments. The delay
 should be specified in units of 20ms. For example to specify a delay of 20ms run this command once in a terminal:
 
-    'echo 1 > ~/AutoRaise.delay'.
+    'echo 1 > ~/AutoRaise.delay'
 
 To enable warp, run this command:
 
-    'echo "0.5 0.5" > ~/AutoRaise.warp'.
+    'echo "0.5 0.5" > ~/AutoRaise.warp'
 
 *Note2*: If you are not comfortable running the provided binary, then you can compile it yourself using this command:
 

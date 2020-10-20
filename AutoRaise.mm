@@ -69,7 +69,8 @@ AXUIElementRef fallback(CGPoint point) {
     NSDictionary * top_window = topwindow(point);
     if (top_window) {
         CFTypeRef _windows_cf = nullptr;
-        AXUIElementRef _window_owner = AXUIElementCreateApplication([top_window[(id) kCGWindowOwnerPID] intValue]);
+        pid_t pid = [top_window[(id) kCGWindowOwnerPID] intValue];
+        AXUIElementRef _window_owner = AXUIElementCreateApplication(pid);
         AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf);
         CFRelease(_window_owner);
         if (_windows_cf) {
@@ -297,9 +298,15 @@ const void MyClass::onTick() {
         return;
     }
 
-    // 1. mouseMoved: we have to decide if the window needs raising
-    // 2. delayTicks: count down as long as the mouse doesn't move
-    // 3. raiseTimes: the window needs raising a couple of times.
+    // don't raise for as long as something is being dragged (resizing a window for instance)
+    if (CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft) ||
+        CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight)) {
+        return;
+    }
+
+    // mouseMoved: we have to decide if the window needs raising
+    // delayTicks: count down as long as the mouse doesn't move
+    // raiseTimes: the window needs raising a couple of times.
     if (mouseMoved || delayTicks || raiseTimes) {
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
         if (_mouseWindow) {

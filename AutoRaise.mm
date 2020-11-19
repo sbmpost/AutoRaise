@@ -155,6 +155,45 @@ CGPoint get_mousepoint(AXUIElementRef _window) {
     return mousepoint;
 }
 
+bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
+    bool contained = false;
+    AXValueRef _size1 = nullptr;
+    AXValueRef _size2 = nullptr;
+    AXValueRef _pos1 = nullptr;
+    AXValueRef _pos2 = nullptr;
+
+    AXUIElementCopyAttributeValue(_window1, kAXSizeAttribute, (CFTypeRef *) &_size1);
+    if (_size1) {
+        AXUIElementCopyAttributeValue(_window1, kAXPositionAttribute, (CFTypeRef *) &_pos1);
+        if (_pos1) {
+            AXUIElementCopyAttributeValue(_window2, kAXSizeAttribute, (CFTypeRef *) &_size2);
+            if (_size2) {
+                AXUIElementCopyAttributeValue(_window2, kAXPositionAttribute, (CFTypeRef *) &_pos2);
+                if (_pos2) {
+                    CGSize cg_size1;
+                    CGSize cg_size2;
+                    CGPoint cg_pos1;
+                    CGPoint cg_pos2;
+                    if (AXValueGetValue(_size1, kAXValueCGSizeType, &cg_size1) &&
+                        AXValueGetValue(_pos1, kAXValueCGPointType, &cg_pos1) &&
+                        AXValueGetValue(_size2, kAXValueCGSizeType, &cg_size2) &&
+                        AXValueGetValue(_pos2, kAXValueCGPointType, &cg_pos2)) {
+                        contained = cg_pos1.x > cg_pos2.x && cg_pos1.y > cg_pos2.y &&
+                            cg_pos1.x + cg_size1.width < cg_pos2.x + cg_size2.width &&
+                            cg_pos1.y + cg_size1.height < cg_pos2.y + cg_size2.height;
+                    }
+                    CFRelease(_pos2);
+                }
+                CFRelease(_size2);
+            }
+            CFRelease(_pos1);
+        }
+        CFRelease(_size1);
+    }
+
+    return contained;
+}
+
 //-----------------------------------------------notifications----------------------------------------------
 
 class MyClass;
@@ -334,8 +373,9 @@ const void MyClass::onTick() {
                             CGWindowID window1_id, window2_id;
                             _AXUIElementGetWindow(_mouseWindow, &window1_id);
                             _AXUIElementGetWindow((AXUIElementRef) _focusedWindow, &window2_id);
+                            needs_raise = window1_id != window2_id && !contained_within(
+				(AXUIElementRef) _focusedWindow, _mouseWindow);
                             CFRelease(_focusedWindow);
-                            needs_raise = window1_id != window2_id;
                         }
                     }
                     CFRelease(_focusedApp);

@@ -203,9 +203,9 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
                         AXValueGetValue(_pos1, kAXValueCGPointType, &cg_pos1) &&
                         AXValueGetValue(_size2, kAXValueCGSizeType, &cg_size2) &&
                         AXValueGetValue(_pos2, kAXValueCGPointType, &cg_pos2)) {
-                        contained = cg_pos1.x > cg_pos2.x && cg_pos1.y > cg_pos2.y &&
-                            cg_pos1.x + cg_size1.width < cg_pos2.x + cg_size2.width &&
-                            cg_pos1.y + cg_size1.height < cg_pos2.y + cg_size2.height;
+                        contained = cg_pos1.x >= cg_pos2.x && cg_pos1.y >= cg_pos2.y &&
+                            cg_pos1.x + cg_size1.width <= cg_pos2.x + cg_size2.width &&
+                            cg_pos1.y + cg_size1.height <= cg_pos2.y + cg_size2.height;
                     }
                     CFRelease(_pos2);
                 }

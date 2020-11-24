@@ -155,6 +155,31 @@ CGPoint get_mousepoint(AXUIElementRef _window) {
     return mousepoint;
 }
 
+int get_mouse_distance(CGPoint point, AXUIElementRef _window) {
+    int mouse_distance = INT_MAX;
+    AXValueRef _size = nullptr;
+    AXValueRef _pos = nullptr;
+
+    AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
+    if (_size) {
+        AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
+        if (_pos) {
+            CGSize cg_size;
+            CGPoint cg_pos;
+            if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size) &&
+                AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
+                int horizontal = fmin(abs(cg_pos.x-point.x), abs(cg_pos.x + cg_size.width - point.x));
+                int vertical = fmin(abs(cg_pos.y-point.y), abs(cg_pos.y + cg_size.height - point.y));
+                mouse_distance = fmin(horizontal, vertical);
+            }
+            CFRelease(_pos);
+        }
+        CFRelease(_size);
+    }
+
+    return mouse_distance;
+}
+
 bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
     bool contained = false;
     AXValueRef _size1 = nullptr;
@@ -373,8 +398,9 @@ const void MyClass::onTick() {
                             CGWindowID window1_id, window2_id;
                             _AXUIElementGetWindow(_mouseWindow, &window1_id);
                             _AXUIElementGetWindow((AXUIElementRef) _focusedWindow, &window2_id);
-                            needs_raise = window1_id != window2_id && !contained_within(
-				(AXUIElementRef) _focusedWindow, _mouseWindow);
+                            needs_raise = window1_id != window2_id &&
+				get_mouse_distance(mousePoint, (AXUIElementRef) _focusedWindow) > 10 &&
+				!contained_within((AXUIElementRef) _focusedWindow, _mouseWindow);
                             CFRelease(_focusedWindow);
                         }
                     }

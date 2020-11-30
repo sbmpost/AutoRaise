@@ -399,7 +399,7 @@ const void MyClass::onTick() {
                             _AXUIElementGetWindow(_mouseWindow, &window1_id);
                             _AXUIElementGetWindow((AXUIElementRef) _focusedWindow, &window2_id);
                             needs_raise = window1_id != window2_id &&
-				get_mouse_distance(mousePoint, (AXUIElementRef) _focusedWindow) > 10 &&
+				get_mouse_distance(mousePoint, (AXUIElementRef) _focusedWindow) > 20 &&
 				!contained_within((AXUIElementRef) _focusedWindow, _mouseWindow);
                             CFRelease(_focusedWindow);
                         }

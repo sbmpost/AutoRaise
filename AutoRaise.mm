@@ -37,6 +37,8 @@ static int raiseTimes = 0;
 static int delayTicks = 0;
 static int delayCount = 0;
 
+#define ARTIFICIAL_BORDER 20
+
 //---------------------------------------------helper methods-----------------------------------------------
 
 NSDictionary * topwindow(CGPoint point) {
@@ -178,9 +180,11 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
                         AXValueGetValue(_pos1, kAXValueCGPointType, &cg_pos1) &&
                         AXValueGetValue(_size2, kAXValueCGSizeType, &cg_size2) &&
                         AXValueGetValue(_pos2, kAXValueCGPointType, &cg_pos2)) {
-                        contained = cg_pos1.x + 20 >= cg_pos2.x && cg_pos1.y + 20 >= cg_pos2.y &&
-                            cg_pos1.x - 20 + cg_size1.width <= cg_pos2.x + cg_size2.width &&
-                            cg_pos1.y - 20 + cg_size1.height <= cg_pos2.y + cg_size2.height;
+                        contained =
+                            cg_pos1.x + ARTIFICIAL_BORDER >= cg_pos2.x &&
+                            cg_pos1.y + ARTIFICIAL_BORDER >= cg_pos2.y &&
+                            cg_pos1.x - ARTIFICIAL_BORDER + cg_size1.width <= cg_pos2.x + cg_size2.width &&
+                            cg_pos1.y - ARTIFICIAL_BORDER + cg_size1.height <= cg_pos2.y + cg_size2.height;
                     }
                     CFRelease(_pos2);
                 }

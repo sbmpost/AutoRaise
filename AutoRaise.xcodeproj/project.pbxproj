@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C501B69525875F32005B3964 /* LICENSE.md in Resources */ = {isa = PBXBuildFile; fileRef = C501B69425875F32005B3964 /* LICENSE.md */; };
 		C557DD431B988ED300E59BC9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C557DD421B988ED300E59BC9 /* AppDelegate.swift */; };
 		C557DD451B988ED300E59BC9 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C557DD441B988ED300E59BC9 /* Images.xcassets */; };
 		C557DD481B988ED300E59BC9 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = C557DD461B988ED300E59BC9 /* MainMenu.xib */; };
@@ -14,6 +15,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		C501B69425875F32005B3964 /* LICENSE.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = LICENSE.md; sourceTree = "<group>"; };
 		C557DD3D1B988ED300E59BC9 /* AutoRaise.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AutoRaise.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C557DD421B988ED300E59BC9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		C557DD441B988ED300E59BC9 /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
@@ -36,6 +38,7 @@
 		C557DD341B988ED300E59BC9 = {
 			isa = PBXGroup;
 			children = (
+				C501B69425875F32005B3964 /* LICENSE.md */,
 				C59A84EF2586387800AD9D56 /* AutoRaise */,
 				C557DD3F1B988ED300E59BC9 /* Launcher */,
 				C557DD3E1B988ED300E59BC9 /* Products */,
@@ -85,7 +88,7 @@
 			dependencies = (
 			);
 			name = AutoRaise;
-			productName = "AutoRaise";
+			productName = AutoRaise;
 			productReference = C557DD3D1B988ED300E59BC9 /* AutoRaise.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -130,6 +133,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C501B69525875F32005B3964 /* LICENSE.md in Resources */,
 				C557DD451B988ED300E59BC9 /* Images.xcassets in Resources */,
 				C59A84F02586387800AD9D56 /* AutoRaise in Resources */,
 				C557DD481B988ED300E59BC9 /* MainMenu.xib in Resources */,

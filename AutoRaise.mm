@@ -1,5 +1,5 @@
 /*
- * AutoRaise - Copyright (C) 2020 sbmpost
+ * AutoRaise - Copyright (C) 2021 sbmpost
  * Some pieces of the code are based on
  * metamove by jmgao as part of XFree86
  *
@@ -455,7 +455,7 @@ int main(int argc, const char * argv[]) {
         }
         if (!delayCount) { delayCount = 2; }
 
-        printf("\nBy sbmpost(c) 2020, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5>]"
+        printf("\nBy sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5>]"
                "\nStarted with %d ms delay%s", POLLING_MS, delayCount*POLLING_MS, warpMouse ? ", " : "\n");
         if (warpMouse) { printf("warpX: %.1f, warpY: %.1f\n", warpX, warpY); }
 

@@ -394,8 +394,14 @@ const void MyClass::onTick() {
 
                         // raise mousewindow
                         if (AXUIElementPerformAction(_mouseWindow, kAXRaiseAction) == kAXErrorSuccess) {
-                            [[NSRunningApplication runningApplicationWithProcessIdentifier: mouseWindow_pid]
-                                activateWithOptions: NSApplicationActivateIgnoringOtherApps];
+//                            [[NSRunningApplication runningApplicationWithProcessIdentifier: mouseWindow_pid]
+//                                activateWithOptions: NSApplicationActivateIgnoringOtherApps];
+
+                            // Deprecated, but NSRunningApplication
+                            // does not work properly on OSX 11.1
+                            ProcessSerialNumber process;
+                            OSStatus error = GetProcessForPID(mouseWindow_pid, &process);
+                            if (!error) { SetFrontProcessWithOptions(&process, kSetFrontProcessFrontWindowOnly); }
                         }
                     }
                 } else {

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-rm -rf AutoRaise.app &&
+rm -rf AutoRaise.app && \
 mkdir -p AutoRaise.app/Contents/MacOS && \
 mkdir AutoRaise.app/Contents/Resources && \
 cp AutoRaise AutoRaise.app/Contents/MacOS && \

@@ -39,4 +39,7 @@ To enable warp, run this command:
 
     g++ -O2 -Wall -fobjc-arc -o AutoRaise AutoRaise.mm -framework AppKit
 
+*Note3*: To create the AutoRaise.app, simply type: "./create-app-bundle.sh" in a bash terminal. Beware that once started,
+it will run on the background and can only be stopped again via "Activity Monitor"
+
 See also https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x

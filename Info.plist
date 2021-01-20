@@ -12,8 +12,6 @@
     <string>1.1</string>
     <key>CFBundleIconFile</key>
     <string>AutoRaise</string>
-    <key>CFBundleIconName</key>
-    <string>AutoRaise</string>
     <key>CFBundleName</key>
     <string>AutoRaise</string>
     <key>CFBundlePackageType</key>

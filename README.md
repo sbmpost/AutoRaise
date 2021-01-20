@@ -5,6 +5,10 @@ AutoRaise). Then double click it from within Finder. To quickly toggle it on/off
 and paste it into an automator service workflow. Then bind the created service to a keyboard shortcut via System
 Preferences|Keyboard|Shortcuts.
 
+**Update**: It is now also possible to create an app bundle (for further instructions see at the bottom of this page).
+If you prefer to use the app bundle version, replace "/Applications/AutoRaise" with "/Applications/AutoRaise.app"
+and update the applescript accordingly.
+
 Applescript usage:
 
     on run {input, parameters}
@@ -43,6 +47,6 @@ To enable warp, run this command:
 
     ./create-app-bundle.sh
 
-Beware that once the app is started, it will run on the background and can only be stopped again via "Activity Monitor"
+Beware that once the app is started, it runs on the background and can only be stopped again via "Activity Monitor"
 
 See also https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x

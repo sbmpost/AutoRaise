@@ -47,6 +47,8 @@ To enable warp, run this command:
 
     ./create-app-bundle.sh
 
-Beware that once the app is started, it runs on the background and can only be stopped again via "Activity Monitor"
+Beware that once the app is started, it runs on the background and can only be stopped again via "Activity Monitor" or
+the applescript above. Also command line arguments are not accepted, so the app bundle version relies totally on the
+AutoRaise.delay and AutoRaise.warp files in your home folder.
 
 See also https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x

@@ -48,38 +48,40 @@ AXUIElementRef dialog_topwindow(CGPoint point) {
         kAXFocusedApplicationAttribute,
         &_focusedApp);
 
-    CFTypeRef _focusedWindow = nullptr;
-    AXUIElementCopyAttributeValue(
-        (AXUIElementRef) _focusedApp,
-        kAXFocusedWindowAttribute,
-        &_focusedWindow);
-    CFRelease(_focusedApp);
+    if (_focusedApp) {
+        CFTypeRef _focusedWindow = nullptr;
+        AXUIElementCopyAttributeValue(
+            (AXUIElementRef) _focusedApp,
+            kAXFocusedWindowAttribute,
+            &_focusedWindow);
+        CFRelease(_focusedApp);
 
-    if (_focusedWindow) {
-        bool contained = false;
-        AXValueRef _size = nullptr;
-        AXValueRef _pos = nullptr;
+        if (_focusedWindow) {
+            bool contained = false;
+            AXValueRef _size = nullptr;
+            AXValueRef _pos = nullptr;
 
-        _window = (AXUIElementRef) _focusedWindow;
-        AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
-        if (_size) {
-            AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
-            if (_pos) {
-                CGSize cg_size;
-                CGPoint cg_pos;
-                if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size) &&
-                    AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
-                    NSRect window_bounds = NSMakeRect(cg_pos.x, cg_pos.y, cg_size.width, cg_size.height);
-                    contained = NSPointInRect(NSPointFromCGPoint(point), window_bounds);
+            _window = (AXUIElementRef) _focusedWindow;
+            AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
+            if (_size) {
+                AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
+                if (_pos) {
+                    CGSize cg_size;
+                    CGPoint cg_pos;
+                    if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size) &&
+                        AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
+                        NSRect window_bounds = NSMakeRect(cg_pos.x, cg_pos.y, cg_size.width, cg_size.height);
+                        contained = NSPointInRect(NSPointFromCGPoint(point), window_bounds);
+                    }
+                    CFRelease(_pos);
                 }
-                CFRelease(_pos);
+                CFRelease(_size);
             }
-            CFRelease(_size);
-        }
 
-        if (!contained) {
-            _window = nullptr;
-            CFRelease(_focusedWindow);
+            if (!contained) {
+                _window = nullptr;
+                CFRelease(_focusedWindow);
+            }
         }
     }
 

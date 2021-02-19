@@ -39,6 +39,53 @@ static int delayCount = 0;
 
 //---------------------------------------------helper methods-----------------------------------------------
 
+AXUIElementRef dialog_topwindow(CGPoint point) {
+    AXUIElementRef _window = nullptr;
+
+    CFTypeRef _focusedApp = nullptr;
+    AXUIElementCopyAttributeValue(
+        _accessibility_object,
+        kAXFocusedApplicationAttribute,
+        &_focusedApp);
+
+    CFTypeRef _focusedWindow = nullptr;
+    AXUIElementCopyAttributeValue(
+        (AXUIElementRef) _focusedApp,
+        kAXFocusedWindowAttribute,
+        &_focusedWindow);
+    CFRelease(_focusedApp);
+
+    if (_focusedWindow) {
+        bool contained = false;
+        AXValueRef _size = nullptr;
+        AXValueRef _pos = nullptr;
+
+        _window = (AXUIElementRef) _focusedWindow;
+        AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
+        if (_size) {
+            AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
+            if (_pos) {
+                CGSize cg_size;
+                CGPoint cg_pos;
+                if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size) &&
+                    AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
+                    NSRect window_bounds = NSMakeRect(cg_pos.x, cg_pos.y, cg_size.width, cg_size.height);
+                    contained = NSPointInRect(NSPointFromCGPoint(point), window_bounds);
+                }
+                CFRelease(_pos);
+            }
+            CFRelease(_size);
+        }
+
+        if (!contained) {
+            _window = nullptr;
+            CFRelease(_focusedWindow);
+        }
+    }
+
+    return _window;
+}
+
 NSDictionary * topwindow(CGPoint point) {
     NSDictionary * top_window = nullptr;
     NSArray * window_list = (NSArray *) CFBridgingRelease(CGWindowListCopyWindowInfo(
@@ -66,28 +113,31 @@ NSDictionary * topwindow(CGPoint point) {
 
 AXUIElementRef fallback(CGPoint point) {
     AXUIElementRef _window = nullptr;
-    NSDictionary * top_window = topwindow(point);
-    if (top_window) {
-        CFTypeRef _windows_cf = nullptr;
-        pid_t pid = [top_window[(id) kCGWindowOwnerPID] intValue];
-        AXUIElementRef _window_owner = AXUIElementCreateApplication(pid);
-        AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf);
-        CFRelease(_window_owner);
-        if (_windows_cf) {
-            NSArray * application_windows = (NSArray *) CFBridgingRelease(_windows_cf);
-            CGWindowID top_window_id = [top_window[(id) kCGWindowNumber] intValue];
-            if (top_window_id) {
-                for (id application_window in application_windows) {
-                    CGWindowID application_window_id;
-                    AXUIElementRef application_window_ax =
-                        (__bridge AXUIElementRef) application_window;
-                    if (_AXUIElementGetWindow(
-                        application_window_ax,
-                        &application_window_id) == kAXErrorSuccess) {
-                        if (application_window_id == top_window_id) {
-                            _window = application_window_ax;
-                            CFRetain(_window);
-                            break;
+    _window = dialog_topwindow(point);
+    if (!_window) {
+        NSDictionary * top_window = topwindow(point);
+        if (top_window) {
+            CFTypeRef _windows_cf = nullptr;
+            pid_t pid = [top_window[(id) kCGWindowOwnerPID] intValue];
+            AXUIElementRef _window_owner = AXUIElementCreateApplication(pid);
+            AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf);
+            CFRelease(_window_owner);
+            if (_windows_cf) {
+                NSArray * application_windows = (NSArray *) CFBridgingRelease(_windows_cf);
+                CGWindowID top_window_id = [top_window[(id) kCGWindowNumber] intValue];
+                if (top_window_id) {
+                    for (id application_window in application_windows) {
+                        CGWindowID application_window_id;
+                        AXUIElementRef application_window_ax =
+                            (__bridge AXUIElementRef) application_window;
+                        if (_AXUIElementGetWindow(
+                            application_window_ax,
+                            &application_window_id) == kAXErrorSuccess) {
+                            if (application_window_id == top_window_id) {
+                                _window = application_window_ax;
+                                CFRetain(_window);
+                                break;
+                            }
                         }
                     }
                 }
@@ -196,19 +246,19 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
 
 //-----------------------------------------------notifications----------------------------------------------
 
-class MyClass;
+class CppClass;
 @interface MDWorkspaceWatcher : NSObject {
-    MyClass * myClass;
+    CppClass * cppClass;
 }
-- (id)initWithMyClass:(MyClass *)aMyClass;
+- (id)initWithCppClass:(CppClass *)aCppClass;
 @end
 
-class MyClass {
+class CppClass {
 private:
     MDWorkspaceWatcher * workspaceWatcher;
 public:
-    MyClass();
-    ~MyClass();
+    CppClass();
+    ~CppClass();
     const void spaceChanged(NSNotification * notification);
     const void appActivated(NSNotification * notification);
     void startTimer(float timerInterval);
@@ -216,9 +266,9 @@ public:
 };
 
 @implementation MDWorkspaceWatcher
-- (id)initWithMyClass:(MyClass *)aMyClass {
+- (id)initWithCppClass:(CppClass *)aCppClass {
     if ((self = [super init])) {
-        myClass = aMyClass;
+        cppClass = aCppClass;
         NSNotificationCenter * center =
             [[NSWorkspace sharedWorkspace] notificationCenter];
         [center
@@ -240,32 +290,32 @@ public:
     [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver: self];
 }
 - (void)spaceChanged:(NSNotification *)notification {
-    myClass->spaceChanged(notification);
+    cppClass->spaceChanged(notification);
 }
 - (void)appActivated:(NSNotification *)notification {
-    myClass->appActivated(notification);
+    cppClass->appActivated(notification);
 }
 - (void)onTick:(NSNumber *)timerInterval {
     [self performSelector:@selector(onTick:) withObject:timerInterval afterDelay:timerInterval.floatValue];
-    myClass->onTick();
+    cppClass->onTick();
 }
 @end
 
-MyClass::MyClass() {
-    workspaceWatcher = [[MDWorkspaceWatcher alloc] initWithMyClass: this];
+CppClass::CppClass() {
+    workspaceWatcher = [[MDWorkspaceWatcher alloc] initWithCppClass: this];
 }
-MyClass::~MyClass() {}
-void MyClass::startTimer(float timerInterval) {
+CppClass::~CppClass() {}
+void CppClass::startTimer(float timerInterval) {
     [(MDWorkspaceWatcher *) workspaceWatcher onTick: [NSNumber numberWithFloat: timerInterval]];
 }
-const void MyClass::spaceChanged(NSNotification * notification) {
+const void CppClass::spaceChanged(NSNotification * notification) {
     spaceHasChanged = true;
     oldPoint.x = oldPoint.y = 0;
 }
 
 //------------------------------------------where it all happens--------------------------------------------
 
-const void MyClass::appActivated(NSNotification * notification) {
+const void CppClass::appActivated(NSNotification * notification) {
     CGEventRef _event = CGEventCreate(NULL);
     CGPoint mousePoint = CGEventGetLocation(_event);
     if (_event) { CFRelease(_event); }
@@ -304,7 +354,7 @@ const void MyClass::appActivated(NSNotification * notification) {
     }
 }
 
-const void MyClass::onTick() {
+const void CppClass::onTick() {
     // delayTicks = 0 -> delay disabled
     // delayTicks = 1 -> delay finished
     // delayTicks = n -> delay started
@@ -359,10 +409,10 @@ const void MyClass::onTick() {
                     &_focusedApp);
 
                 if (_focusedApp) {
-                    pid_t focusedApp_pid;
-                    if (AXUIElementGetPid(
-                        (AXUIElementRef) _focusedApp,
-                        &focusedApp_pid) == kAXErrorSuccess) {
+//                    pid_t focusedApp_pid;
+//                    if (AXUIElementGetPid(
+//                        (AXUIElementRef) _focusedApp,
+//                        &focusedApp_pid) == kAXErrorSuccess) {
                         CFTypeRef _focusedWindow = nullptr;
                         AXUIElementCopyAttributeValue(
                             (AXUIElementRef) _focusedApp,
@@ -377,7 +427,7 @@ const void MyClass::onTick() {
 				!contained_within((AXUIElementRef) _focusedWindow, _mouseWindow);
                             CFRelease(_focusedWindow);
                         }
-                    }
+//                    }
                     CFRelease(_focusedApp);
                 }
 
@@ -462,8 +512,8 @@ int main(int argc, const char * argv[]) {
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
         AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);
 
-        MyClass myClass = MyClass();
-        myClass.startTimer(POLLING_MS/1000.0);
+        CppClass cppClass = CppClass();
+        cppClass.startTimer(POLLING_MS/1000.0);
         [[NSApplication sharedApplication] run];
     }
     return 0;

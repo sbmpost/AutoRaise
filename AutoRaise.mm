@@ -41,7 +41,6 @@ static int delayCount = 0;
 
 AXUIElementRef dialog_topwindow(CGPoint point) {
     AXUIElementRef _window = nullptr;
-
     pid_t frontmost = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
     AXUIElementRef _focusedApp = AXUIElementCreateApplication(frontmost);
     if (_focusedApp) {
@@ -51,12 +50,10 @@ AXUIElementRef dialog_topwindow(CGPoint point) {
             kAXFocusedWindowAttribute,
             &_focusedWindow);
         CFRelease(_focusedApp);
-
         if (_focusedWindow) {
             bool contained = false;
             AXValueRef _size = nullptr;
             AXValueRef _pos = nullptr;
-
             _window = (AXUIElementRef) _focusedWindow;
             AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
             if (_size) {
@@ -191,7 +188,6 @@ CGPoint get_mousepoint(AXUIElementRef _window) {
     CGPoint mousepoint = {0, 0};
     AXValueRef _size = nullptr;
     AXValueRef _pos = nullptr;
-
     AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
     if (_size) {
         AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
@@ -350,7 +346,6 @@ const void CppClass::appActivated(NSNotification * notification) {
                 kAXFocusedWindowAttribute,
                 &_focusedWindow);
             CFRelease(_focusedApp);
-
             if (_focusedWindow) {
                 CGWarpMouseCursorPosition(get_mousepoint((AXUIElementRef) _focusedWindow));
                 CFRelease(_focusedWindow);

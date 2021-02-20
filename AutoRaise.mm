@@ -90,6 +90,8 @@ NSDictionary * topwindow(CGPoint point) {
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
         kCGNullWindowID));
 
+    bool first_top_window = true;
+    int prev_x, prev_y, prev_width, prev_height;
     for (NSDictionary * window in window_list) {
         NSDictionary * window_bounds_dict = window[(NSString *) CFBridgingRelease(kCGWindowBounds)];
 
@@ -100,9 +102,16 @@ NSDictionary * topwindow(CGPoint point) {
         int width = [window_bounds_dict[@"Width"] intValue];
         int height = [window_bounds_dict[@"Height"] intValue];
         NSRect window_bounds = NSMakeRect(x, y, width, height);
-        if (NSPointInRect(NSPointFromCGPoint(point), window_bounds)) {
+        if (NSPointInRect(NSPointFromCGPoint(point), window_bounds) && (
+            first_top_window || (x >= prev_x && y >= prev_y &&
+            x + width <= prev_x + prev_width &&
+            y + height <= prev_y + prev_height))) {
+            prev_x = x;
+            prev_y = y;
+            prev_width = width;
+            prev_height = height;
+            first_top_window = false;
             top_window = window;
-            break;
         }
     }
 

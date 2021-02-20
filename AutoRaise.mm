@@ -42,12 +42,8 @@ static int delayCount = 0;
 AXUIElementRef dialog_topwindow(CGPoint point) {
     AXUIElementRef _window = nullptr;
 
-    CFTypeRef _focusedApp = nullptr;
-    AXUIElementCopyAttributeValue(
-        _accessibility_object,
-        kAXFocusedApplicationAttribute,
-        &_focusedApp);
-
+    pid_t frontmost = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
+    AXUIElementRef _focusedApp = AXUIElementCreateApplication(frontmost);
     if (_focusedApp) {
         CFTypeRef _focusedWindow = nullptr;
         AXUIElementCopyAttributeValue(
@@ -79,8 +75,8 @@ AXUIElementRef dialog_topwindow(CGPoint point) {
             }
 
             if (!contained) {
+                CFRelease(_window);
                 _window = nullptr;
-                CFRelease(_focusedWindow);
             }
         }
     }
@@ -114,8 +110,7 @@ NSDictionary * topwindow(CGPoint point) {
 }
 
 AXUIElementRef fallback(CGPoint point) {
-    AXUIElementRef _window = nullptr;
-    _window = dialog_topwindow(point);
+    AXUIElementRef _window = dialog_topwindow(point);
     if (!_window) {
         NSDictionary * top_window = topwindow(point);
         if (top_window) {
@@ -165,7 +160,7 @@ AXUIElementRef get_mousewindow(CGPoint point) {
                 return _element;
             } else {
                 AXUIElementRef _window = nullptr;
-                AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *)&_window);
+                AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *) &_window);
                 if (!_window && !CFEqual(_element_role, kAXMenuItemRole)) {
                     _window = fallback(point);
                 }
@@ -404,32 +399,22 @@ const void CppClass::onTick() {
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
                 Boolean needs_raise = true;
-                CFTypeRef _focusedApp = nullptr;
-                AXUIElementCopyAttributeValue(
-                    _accessibility_object,
-                    kAXFocusedApplicationAttribute,
-                    &_focusedApp);
-
+                pid_t frontmost = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
+                AXUIElementRef _focusedApp = AXUIElementCreateApplication(frontmost);
                 if (_focusedApp) {
-//                    pid_t focusedApp_pid;
-//                    if (AXUIElementGetPid(
-//                        (AXUIElementRef) _focusedApp,
-//                        &focusedApp_pid) == kAXErrorSuccess) {
-                        CFTypeRef _focusedWindow = nullptr;
-                        AXUIElementCopyAttributeValue(
-                            (AXUIElementRef) _focusedApp,
-                            kAXFocusedWindowAttribute,
-                            &_focusedWindow);
-
-                        if (_focusedWindow) {
-                            CGWindowID window1_id, window2_id;
-                            _AXUIElementGetWindow(_mouseWindow, &window1_id);
-                            _AXUIElementGetWindow((AXUIElementRef) _focusedWindow, &window2_id);
-                            needs_raise = window1_id != window2_id &&
-				!contained_within((AXUIElementRef) _focusedWindow, _mouseWindow);
-                            CFRelease(_focusedWindow);
-                        }
-//                    }
+                    AXUIElementRef _focusedWindow = nullptr;
+                    AXUIElementCopyAttributeValue(
+                        _focusedApp,
+                        kAXFocusedWindowAttribute,
+                        (CFTypeRef *) &_focusedWindow);
+                    if (_focusedWindow) {
+                        CGWindowID window1_id, window2_id;
+                        _AXUIElementGetWindow(_mouseWindow, &window1_id);
+                        _AXUIElementGetWindow(_focusedWindow, &window2_id);
+                        needs_raise = window1_id != window2_id &&
+                            !contained_within(_focusedWindow, _mouseWindow);
+                        CFRelease(_focusedWindow);
+                    }
                     CFRelease(_focusedApp);
                 }
 

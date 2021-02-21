@@ -151,28 +151,27 @@ AXUIElementRef fallback(CGPoint point) {
     return _window;
 }
 
-AXUIElementRef get_mousewindow(CGPoint point) {
-    AXUIElementRef _element = nullptr;
-    AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
+AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
     if (_element) {
         CFStringRef _element_role = nullptr;
         AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
         if (_element_role) {
-            if (CFEqual(_element_role, kAXDockItemRole)) {
+            if (CFEqual(_element_role, kAXDockItemRole) ||
+                CFEqual(_element_role, kAXMenuItemRole)) {
                 CFRelease(_element_role);
                 CFRelease(_element);
-            } else if (CFEqual(_element_role, kAXWindowRole)) {
+            } else if (
+                CFEqual(_element_role, kAXWindowRole) ||
+                CFEqual(_element_role, kAXSheetRole) ||
+                CFEqual(_element_role, kAXDrawerRole)) {
                 CFRelease(_element_role);
                 return _element;
             } else {
-                AXUIElementRef _window = nullptr;
-                AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *) &_window);
-                if (!_window && !CFEqual(_element_role, kAXMenuItemRole)) {
-                    _window = fallback(point);
-                }
+                AXUIElementRef _parent = nullptr;
+                AXUIElementCopyAttributeValue(_element, kAXParentAttribute, (CFTypeRef *) &_parent);
                 CFRelease(_element_role);
                 CFRelease(_element);
-                return _window;
+                return get_raiseable_window(_parent, point);
             }
         } else {
             CFRelease(_element);
@@ -182,6 +181,12 @@ AXUIElementRef get_mousewindow(CGPoint point) {
     }
 
     return nullptr;
+}
+
+AXUIElementRef get_mousewindow(CGPoint point) {
+    AXUIElementRef _element = nullptr;
+    AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
+    return get_raiseable_window(_element, point);
 }
 
 CGPoint get_mousepoint(AXUIElementRef _window) {

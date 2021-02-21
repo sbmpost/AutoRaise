@@ -40,11 +40,11 @@ static int delayCount = 0;
 //---------------------------------------------helper methods-----------------------------------------------
 
 AXUIElementRef dialog_topwindow(CGPoint point) {
-    AXUIElementRef _window = nullptr;
+    AXUIElementRef _window = NULL;
     pid_t frontmost = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
     AXUIElementRef _focusedApp = AXUIElementCreateApplication(frontmost);
     if (_focusedApp) {
-        CFTypeRef _focusedWindow = nullptr;
+        CFTypeRef _focusedWindow = NULL;
         AXUIElementCopyAttributeValue(
             (AXUIElementRef) _focusedApp,
             kAXFocusedWindowAttribute,
@@ -52,8 +52,8 @@ AXUIElementRef dialog_topwindow(CGPoint point) {
         CFRelease(_focusedApp);
         if (_focusedWindow) {
             bool contained = false;
-            AXValueRef _size = nullptr;
-            AXValueRef _pos = nullptr;
+            AXValueRef _size = NULL;
+            AXValueRef _pos = NULL;
             _window = (AXUIElementRef) _focusedWindow;
             AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
             if (_size) {
@@ -73,7 +73,7 @@ AXUIElementRef dialog_topwindow(CGPoint point) {
 
             if (!contained) {
                 CFRelease(_window);
-                _window = nullptr;
+                _window = NULL;
             }
         }
     }
@@ -82,7 +82,7 @@ AXUIElementRef dialog_topwindow(CGPoint point) {
 }
 
 NSDictionary * topwindow(CGPoint point) {
-    NSDictionary * top_window = nullptr;
+    NSDictionary * top_window = NULL;
     NSArray * window_list = (NSArray *) CFBridgingRelease(CGWindowListCopyWindowInfo(
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
         kCGNullWindowID));
@@ -92,7 +92,7 @@ NSDictionary * topwindow(CGPoint point) {
     for (NSDictionary * window in window_list) {
         NSDictionary * window_bounds_dict = window[(NSString *) CFBridgingRelease(kCGWindowBounds)];
 
-        if (![window[(id) kCGWindowLayer] isEqual: @0]) { continue; }
+        if (![window[(__bridge id) kCGWindowLayer] isEqual: @0]) { continue; }
 
         int x = [window_bounds_dict[@"X"] intValue];
         int y = [window_bounds_dict[@"Y"] intValue];
@@ -120,14 +120,14 @@ AXUIElementRef fallback(CGPoint point) {
     if (!_window) {
         NSDictionary * top_window = topwindow(point);
         if (top_window) {
-            CFTypeRef _windows_cf = nullptr;
-            pid_t pid = [top_window[(id) kCGWindowOwnerPID] intValue];
+            CFTypeRef _windows_cf = NULL;
+            pid_t pid = [top_window[(__bridge id) kCGWindowOwnerPID] intValue];
             AXUIElementRef _window_owner = AXUIElementCreateApplication(pid);
             AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf);
             CFRelease(_window_owner);
             if (_windows_cf) {
                 NSArray * application_windows = (NSArray *) CFBridgingRelease(_windows_cf);
-                CGWindowID top_window_id = [top_window[(id) kCGWindowNumber] intValue];
+                CGWindowID top_window_id = [top_window[(__bridge id) kCGWindowNumber] intValue];
                 if (top_window_id) {
                     for (id application_window in application_windows) {
                         CGWindowID application_window_id;
@@ -151,28 +151,27 @@ AXUIElementRef fallback(CGPoint point) {
     return _window;
 }
 
-AXUIElementRef get_mousewindow(CGPoint point) {
-    AXUIElementRef _element = nullptr;
-    AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
+AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
     if (_element) {
-        CFStringRef _element_role = nullptr;
+        CFStringRef _element_role = NULL;
         AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
         if (_element_role) {
-            if (CFEqual(_element_role, kAXDockItemRole)) {
+            if (CFEqual(_element_role, kAXDockItemRole) ||
+                CFEqual(_element_role, kAXMenuItemRole)) {
                 CFRelease(_element_role);
                 CFRelease(_element);
-            } else if (CFEqual(_element_role, kAXWindowRole)) {
+            } else if (
+                CFEqual(_element_role, kAXWindowRole) ||
+                CFEqual(_element_role, kAXSheetRole) ||
+                CFEqual(_element_role, kAXDrawerRole)) {
                 CFRelease(_element_role);
                 return _element;
             } else {
-                AXUIElementRef _window = nullptr;
-                AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *) &_window);
-                if (!_window && !CFEqual(_element_role, kAXMenuItemRole)) {
-                    _window = fallback(point);
-                }
+                AXUIElementRef _parent = NULL;
+                AXUIElementCopyAttributeValue(_element, kAXParentAttribute, (CFTypeRef *) &_parent);
                 CFRelease(_element_role);
                 CFRelease(_element);
-                return _window;
+                return get_raiseable_window(_parent, point);
             }
         } else {
             CFRelease(_element);
@@ -181,13 +180,19 @@ AXUIElementRef get_mousewindow(CGPoint point) {
         return fallback(point);
     }
 
-    return nullptr;
+    return NULL;
+}
+
+AXUIElementRef get_mousewindow(CGPoint point) {
+    AXUIElementRef _element = NULL;
+    AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
+    return get_raiseable_window(_element, point);
 }
 
 CGPoint get_mousepoint(AXUIElementRef _window) {
     CGPoint mousepoint = {0, 0};
-    AXValueRef _size = nullptr;
-    AXValueRef _pos = nullptr;
+    AXValueRef _size = NULL;
+    AXValueRef _pos = NULL;
     AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
     if (_size) {
         AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
@@ -209,10 +214,10 @@ CGPoint get_mousepoint(AXUIElementRef _window) {
 
 bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
     bool contained = false;
-    AXValueRef _size1 = nullptr;
-    AXValueRef _size2 = nullptr;
-    AXValueRef _pos1 = nullptr;
-    AXValueRef _pos2 = nullptr;
+    AXValueRef _size1 = NULL;
+    AXValueRef _size2 = NULL;
+    AXValueRef _pos1 = NULL;
+    AXValueRef _pos2 = NULL;
 
     AXUIElementCopyAttributeValue(_window1, kAXSizeAttribute, (CFTypeRef *) &_size1);
     if (_size1) {
@@ -339,7 +344,7 @@ const void CppClass::appActivated(NSNotification * notification) {
         }
 
         if (needs_warp) {
-            CFTypeRef _focusedWindow = nullptr;
+            CFTypeRef _focusedWindow = NULL;
             AXUIElementRef _focusedApp = AXUIElementCreateApplication(application_pid);
             AXUIElementCopyAttributeValue(
                 (AXUIElementRef) _focusedApp,
@@ -406,7 +411,7 @@ const void CppClass::onTick() {
                 pid_t frontmost = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
                 AXUIElementRef _focusedApp = AXUIElementCreateApplication(frontmost);
                 if (_focusedApp) {
-                    AXUIElementRef _focusedWindow = nullptr;
+                    AXUIElementRef _focusedWindow = NULL;
                     AXUIElementCopyAttributeValue(
                         _focusedApp,
                         kAXFocusedWindowAttribute,

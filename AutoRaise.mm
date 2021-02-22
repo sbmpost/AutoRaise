@@ -39,46 +39,13 @@ static int delayCount = 0;
 
 //---------------------------------------------helper methods-----------------------------------------------
 
-AXUIElementRef dialog_topwindow(CGPoint point) {
-    AXUIElementRef _window = NULL;
-    pid_t frontmost = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
-    AXUIElementRef _focusedApp = AXUIElementCreateApplication(frontmost);
-    if (_focusedApp) {
-        CFTypeRef _focusedWindow = NULL;
-        AXUIElementCopyAttributeValue(
-            (AXUIElementRef) _focusedApp,
-            kAXFocusedWindowAttribute,
-            &_focusedWindow);
-        CFRelease(_focusedApp);
-        if (_focusedWindow) {
-            bool contained = false;
-            AXValueRef _size = NULL;
-            AXValueRef _pos = NULL;
-            _window = (AXUIElementRef) _focusedWindow;
-            AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
-            if (_size) {
-                AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
-                if (_pos) {
-                    CGSize cg_size;
-                    CGPoint cg_pos;
-                    if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size) &&
-                        AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
-                        NSRect window_bounds = NSMakeRect(cg_pos.x, cg_pos.y, cg_size.width, cg_size.height);
-                        contained = NSPointInRect(NSPointFromCGPoint(point), window_bounds);
-                    }
-                    CFRelease(_pos);
-                }
-                CFRelease(_size);
-            }
-
-            if (!contained) {
-                CFRelease(_window);
-                _window = NULL;
-            }
-        }
-    }
-
-    return _window;
+void activate(pid_t pid) {
+    // [[NSRunningApplication runningApplicationWithProcessIdentifier: pid]
+    //   activateWithOptions: NSApplicationActivateIgnoringOtherApps];
+    // Temporary solution as NSRunningApplication does not work properly on OSX 11.1
+    ProcessSerialNumber process;
+    OSStatus error = GetProcessForPID(pid, &process);
+    if (!error) { SetFrontProcessWithOptions(&process, kSetFrontProcessFrontWindowOnly); }
 }
 
 NSDictionary * topwindow(CGPoint point) {
@@ -87,8 +54,6 @@ NSDictionary * topwindow(CGPoint point) {
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
         kCGNullWindowID));
 
-    bool first_top_window = true;
-    int prev_x, prev_y, prev_width, prev_height;
     for (NSDictionary * window in window_list) {
         NSDictionary * window_bounds_dict = window[(NSString *) CFBridgingRelease(kCGWindowBounds)];
 
@@ -99,16 +64,9 @@ NSDictionary * topwindow(CGPoint point) {
         int width = [window_bounds_dict[@"Width"] intValue];
         int height = [window_bounds_dict[@"Height"] intValue];
         NSRect window_bounds = NSMakeRect(x, y, width, height);
-        if (NSPointInRect(NSPointFromCGPoint(point), window_bounds) && (
-            first_top_window || (x >= prev_x && y >= prev_y &&
-            x + width <= prev_x + prev_width &&
-            y + height <= prev_y + prev_height))) {
-            prev_x = x;
-            prev_y = y;
-            prev_width = width;
-            prev_height = height;
-            first_top_window = false;
+        if (NSPointInRect(NSPointFromCGPoint(point), window_bounds)) {
             top_window = window;
+            break;
         }
     }
 
@@ -116,35 +74,35 @@ NSDictionary * topwindow(CGPoint point) {
 }
 
 AXUIElementRef fallback(CGPoint point) {
-    AXUIElementRef _window = dialog_topwindow(point);
-    if (!_window) {
-        NSDictionary * top_window = topwindow(point);
-        if (top_window) {
-            CFTypeRef _windows_cf = NULL;
-            pid_t pid = [top_window[(__bridge id) kCGWindowOwnerPID] intValue];
-            AXUIElementRef _window_owner = AXUIElementCreateApplication(pid);
-            AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf);
-            CFRelease(_window_owner);
-            if (_windows_cf) {
-                NSArray * application_windows = (NSArray *) CFBridgingRelease(_windows_cf);
-                CGWindowID top_window_id = [top_window[(__bridge id) kCGWindowNumber] intValue];
-                if (top_window_id) {
-                    for (id application_window in application_windows) {
-                        CGWindowID application_window_id;
-                        AXUIElementRef application_window_ax =
-                            (__bridge AXUIElementRef) application_window;
-                        if (_AXUIElementGetWindow(
-                            application_window_ax,
-                            &application_window_id) == kAXErrorSuccess) {
-                            if (application_window_id == top_window_id) {
-                                _window = application_window_ax;
-                                CFRetain(_window);
-                                break;
-                            }
+    AXUIElementRef _window = NULL;
+    NSDictionary * top_window = topwindow(point);
+    if (top_window) {
+        CFTypeRef _windows_cf = NULL;
+        pid_t pid = [top_window[(__bridge id) kCGWindowOwnerPID] intValue];
+        AXUIElementRef _window_owner = AXUIElementCreateApplication(pid);
+        AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf);
+        CFRelease(_window_owner);
+        if (_windows_cf) {
+            NSArray * application_windows = (NSArray *) CFBridgingRelease(_windows_cf);
+            CGWindowID top_window_id = [top_window[(__bridge id) kCGWindowNumber] intValue];
+            if (top_window_id) {
+                for (id application_window in application_windows) {
+                    CGWindowID application_window_id;
+                    AXUIElementRef application_window_ax =
+                        (__bridge AXUIElementRef) application_window;
+                    if (_AXUIElementGetWindow(
+                        application_window_ax,
+                        &application_window_id) == kAXErrorSuccess) {
+                        if (application_window_id == top_window_id) {
+                            _window = application_window_ax;
+                            CFRetain(_window);
+                            break;
                         }
                     }
                 }
             }
+        } else {
+            activate(pid);
         }
     }
 
@@ -167,11 +125,15 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
                 CFRelease(_element_role);
                 return _element;
             } else {
-                AXUIElementRef _parent = NULL;
-                AXUIElementCopyAttributeValue(_element, kAXParentAttribute, (CFTypeRef *) &_parent);
+                AXUIElementRef _window = NULL;
+                AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *) &_window);
+                if (!_window) {
+                    AXUIElementCopyAttributeValue(_element, kAXParentAttribute, (CFTypeRef *) &_window);
+                    _window = get_raiseable_window(_window, point);
+                }
                 CFRelease(_element_role);
                 CFRelease(_element);
-                return get_raiseable_window(_parent, point);
+                return _window;
             }
         } else {
             CFRelease(_element);
@@ -440,14 +402,7 @@ const void CppClass::onTick() {
 
                         // raise mousewindow
                         if (AXUIElementPerformAction(_mouseWindow, kAXRaiseAction) == kAXErrorSuccess) {
-//                            [[NSRunningApplication runningApplicationWithProcessIdentifier: mouseWindow_pid]
-//                                activateWithOptions: NSApplicationActivateIgnoringOtherApps];
-
-                            // Deprecated, but NSRunningApplication
-                            // does not work properly on OSX 11.1
-                            ProcessSerialNumber process;
-                            OSStatus error = GetProcessForPID(mouseWindow_pid, &process);
-                            if (!error) { SetFrontProcessWithOptions(&process, kSetFrontProcessFrontWindowOnly); }
+                            activate(mouseWindow_pid);
                         }
                     }
                 } else {

@@ -132,8 +132,12 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
                     _window = get_raiseable_window(_window, point);
                 }
                 CFRelease(_element_role);
-                CFRelease(_element);
-                return _window;
+                if (_window) {
+                    CFRelease(_element);
+                    return _window;
+                } else {
+                    return _element;
+                }
             }
         } else {
             CFRelease(_element);
@@ -401,7 +405,7 @@ const void CppClass::onTick() {
                         else { raiseTimes = 3; }
 
                         // raise mousewindow
-                        if (AXUIElementPerformAction(_mouseWindow, kAXRaiseAction) == kAXErrorSuccess) {
+                        if (AXUIElementPerformAction(_mouseWindow, kAXRaiseAction) == kAXErrorSuccess || true) {
                             activate(mouseWindow_pid);
                         }
                     }

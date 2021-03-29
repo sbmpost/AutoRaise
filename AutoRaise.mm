@@ -125,12 +125,12 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
                 CFRelease(_element_role);
                 return _element;
             } else if (CFEqual(_element_role, kAXApplicationRole)) { // XQuartz special case
-                pid_t mouseWindow_pid;
-                if (AXUIElementGetPid(_element, &mouseWindow_pid) == kAXErrorSuccess) {
+                pid_t application_pid;
+                if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
                     pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
                         frontmostApplication] processIdentifier];
-                    if (mouseWindow_pid != frontmost_pid) {
-                        activate(mouseWindow_pid);
+                    if (application_pid != frontmost_pid) {
+                        activate(application_pid);
                     }
                 }
 

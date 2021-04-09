@@ -21,8 +21,8 @@ Command line usage:
 
 The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. If no parameters have been specified,
 AutoRaise first looks for an AutoRaise.delay file in the **home** folder and defaults to 40ms if it can't find one. Likewise,
-it will for the existence of an AutoRaise.warp. In order to pass the parameters from the example above now and in the future,
-it is sufficient to run these commands once:
+it will check for the existence of an AutoRaise.warp file. In order to pass the parameters from the example above by means of
+these configuration files, it is sufficient to run these commands once:
 
     echo 1 > ~/AutoRaise.delay
     echo "0.5 0.5" > ~/AutoRaise.warp

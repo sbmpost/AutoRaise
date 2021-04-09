@@ -30,7 +30,7 @@ these configuration files, it is sufficient to run these commands once:
 AutoRaise.app usage:
 
     a) setup configuration files, see above ^
-    b) cp AutoRaise.app /Applications/
+    b) cp -r AutoRaise.app /Applications/
     c) run AutoRaise.app (allow Accessibility access if asked)
     d) either stop AutoRaise via "Activity Monitor" or read on:
 

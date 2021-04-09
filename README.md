@@ -31,7 +31,7 @@ AutoRaise.app usage:
 
     a) setup configuration files, see above ^
     b) cp -r AutoRaise.app /Applications/
-    c) run AutoRaise.app (allow Accessibility access if asked)
+    c) open /Applications/AutoRaise.app (allow Accessibility access if asked)
     d) either stop AutoRaise via "Activity Monitor" or read on:
 
 To toggle AutoRaise on/off with a keyboard shortcut, paste the AppleScript below into an automator service workflow. Then
@@ -54,6 +54,7 @@ Applescript:
     end run
 
 *Note*: When upgrading from a previous AutoRaise version, it is a good idea to check you are not running two instances
-at the same time (the older and the new version). This can always be checked with "Activity Monitor"
+at the same time (the older and the new version). This can always be checked with "Activity Monitor". It may also be
+necessary to toggle off and on accessibility for AutoRaise in the System Preferences|Security & Privacy|Privacy pane. 
 
 See also https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x

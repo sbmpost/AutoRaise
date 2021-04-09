@@ -136,9 +136,11 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
                             _element,
                             kAXTitleAttribute,
                             (CFTypeRef *) &_applicationTitle
-                        ) == kAXErrorSuccess && CFEqual(_applicationTitle, XQuartz)) {
+                        ) == kAXErrorSuccess) {
+                            if(CFEqual(_applicationTitle, XQuartz)) {
+                                activate(application_pid);
+                            }
                             CFRelease(_applicationTitle);
-                            activate(application_pid);
                         }
                     }
                 }

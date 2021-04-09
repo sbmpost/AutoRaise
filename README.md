@@ -53,7 +53,7 @@ Applescript:
         return input
     end run
 
-*Note*: When upgrading from a previous AutoRaise version, it is a good idea to check you are not running two instances
+*Note*: When upgrading from a previous AutoRaise version, it is a good idea to check if you are not running two instances
 at the same time (the older and the new version). This can always be checked with "Activity Monitor". It may also be
 necessary to toggle off and on access for AutoRaise in the System Preferences|Security & Privacy|Privacy|Accessibility pane. 
 

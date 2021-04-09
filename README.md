@@ -1,6 +1,7 @@
 When you hover a window it will be raised to the front (with a delay of your choosing) and gets the focus. There is also an
 option to warp the mouse to the center of the activated window, using the cmd-tab key combination for example. To use AutoRaise,
-follow these instructions:
+you can download the master branch from [here](https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip) and follow
+these instructions the compile the binaries:
 
     a) download https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip
     b) unzip -d ~ ~/Downloads/AutoRaise-master.zip
@@ -19,10 +20,10 @@ Command line usage:
 
     ./AutoRaise -delay 1 -warpX 0.5 -warpY 0.5
 
-The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. If no delay has been specified,
+The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. If no parameters have been specified,
 AutoRaise first looks for an AutoRaise.delay file in the **home** folder and defaults to 40ms if it can't find one. Likewise,
-AutoRaise checks for the existence of an AutoRaise.warp. So in order to pass the parameters from above now and in the future,
-it will be sufficient to run these commands once:
+it will for the existence of an AutoRaise.warp. In order to pass the parameters from the example above now and in the future,
+it is sufficient to run these commands once:
 
     echo 1 > ~/AutoRaise.delay
     echo "0.5 0.5" > ~/AutoRaise.warp
@@ -31,12 +32,12 @@ AutoRaise.app usage:
 
     a) setup configuration files, see above ^
     b) cp AutoRaise.app /Applications/
-    c) run AutoRaise.app (and allow Accessibility access if asked)
+    c) run AutoRaise.app (allow Accessibility access if asked)
     d) either stop AutoRaise via "Activity Monitor" or read on:
 
 To toggle AutoRaise on/off with a keyboard shortcut, paste the AppleScript below into an automator service workflow. Then
-bind the created service to a keyboard shortcut of your own choice via System Preferences|Keyboard|Shortcuts. This also
-applies for AutoRaise.app in which case "/Applications/AutoRaise" should be replaced with "/Applications/AutoRaise.app"
+bind the created service to a keyboard shortcut via System Preferences|Keyboard|Shortcuts. This also works for AutoRaise.app
+in which case "/Applications/AutoRaise" should be replaced with "/Applications/AutoRaise.app"
 
 Applescript:
 

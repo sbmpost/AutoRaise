@@ -27,6 +27,7 @@
 
 extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out) __attribute__((weak_import));
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
+static CFStringRef XQuartz = CFSTR("XQuartz");
 static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
 static bool appWasActivated = false;
@@ -130,7 +131,15 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
                     pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
                         frontmostApplication] processIdentifier];
                     if (application_pid != frontmost_pid) {
-                        activate(application_pid);
+                        CFStringRef _applicationTitle;
+                        if (AXUIElementCopyAttributeValue(
+                            _element,
+                            kAXTitleAttribute,
+                            (CFTypeRef *) &_applicationTitle
+                        ) == kAXErrorSuccess && CFEqual(_applicationTitle, XQuartz)) {
+                            CFRelease(_applicationTitle);
+                            activate(application_pid);
+                        }
                     }
                 }
 

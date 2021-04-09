@@ -12,8 +12,8 @@ This will give you two files:
     AutoRaise.app
 
 AutoRaise can be used directly from the command line in which case it accepts command line parameters. AutoRaise.app can be used
-without a terminal window and relies on the presence of two configuration files. Another difference is that AutoRaise.app runs on
-the background and can only be stopped via "Activity Monitor" or the AppleScript provided at the bottom of this README.
+without a terminal window and therefore relies on the presence of two configuration files. Another difference is that AutoRaise.app
+runs on the background and can only be stopped via "Activity Monitor" or the AppleScript provided at the bottom of this README.
 
 Command line usage:
 

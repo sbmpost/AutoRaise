@@ -1,15 +1,44 @@
-When you hover a window it will be raised to the front (with a delay of your choosing) and gets the focus. There is
-also an option to warp the mouse to the center of the activated window, using the cmd-tab key combination for example.
-To use this tool, copy the AutoRaise binary to your /Applications/ folder making sure it is executable (chmod 700
-AutoRaise). Then double click it from within Finder. To quickly toggle it on/off you can use the applescript below
-and paste it into an automator service workflow. Then bind the created service to a keyboard shortcut via System
-Preferences|Keyboard|Shortcuts.
+When you hover a window it will be raised to the front (with a delay of your choosing) and gets the focus. There is also an
+option to warp the mouse to the center of the activated window, using the cmd-tab key combination for example. To use AutoRaise,
+follow these instructions:
 
-**Update**: It is now also possible to create an app bundle (for further instructions see at the bottom of this page).
-If you prefer to use the app bundle version, replace "/Applications/AutoRaise" with "/Applications/AutoRaise.app"
-and update the applescript accordingly.
+    a) download https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip
+    b) unzip -d ~ ~/Downloads/AutoRaise-master.zip
+    c) cd ~/AutoRaise-master && make clean && make
 
-Applescript usage:
+This will give you two files:
+
+    AutoRaise
+    AutoRaise.app
+
+AutoRaise can be used directly from the command line in which case it accepts command line parameters. AutoRaise.app can be used
+without a terminal window and relies on the presence of two configuration files. Another difference is that AutoRaise.app runs on
+the background and can only be stopped via "Activity Monitor" or the AppleScript provided at the bottom of this README.
+
+Command line usage:
+
+    ./AutoRaise -delay 1 -warpX 0.5 -warpY 0.5
+
+The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. If no delay has been specified,
+AutoRaise first looks for an AutoRaise.delay file in the **home** folder and defaults to 40ms if it can't find one. Likewise,
+AutoRaise checks for the existence of an AutoRaise.warp. So in order to pass the parameters from above now and in the future,
+it will be sufficient to run these commands once:
+
+    echo 1 > ~/AutoRaise.delay
+    echo "0.5 0.5" > ~/AutoRaise.warp
+
+AutoRaise.app usage:
+
+    a) setup configuration files, see above ^
+    b) cp AutoRaise.app /Applications/
+    c) run AutoRaise.app (and allow Accessibility access if asked)
+    d) either stop AutoRaise via "Activity Monitor" or read on:
+
+To toggle AutoRaise on/off with a keyboard shortcut, paste the AppleScript below into an automator service workflow. Then
+bind the created service to a keyboard shortcut of your own choice via System Preferences|Keyboard|Shortcuts. This also
+applies for AutoRaise.app in which case "/Applications/AutoRaise" should be replaced with "/Applications/AutoRaise.app"
+
+Applescript:
 
     on run {input, parameters}
         tell application "Finder"
@@ -24,31 +53,7 @@ Applescript usage:
         return input
     end run
 
-Command line usage:
-
-    ./AutoRaise -delay 2 -warpX 0.5 -warpY 0.5
-
-*Note1*: If no delay has been specified on the command line, AutoRaise will look for an AutoRaise.delay file in the
-**home** folder. It will also check for the existence of an AutoRaise.warp file. This is particularly useful for the
-applescript usage as described above because 'launch application' does not support command line arguments. The delay
-should be specified in units of 20ms. For example to specify a delay of 20ms run this command once in a terminal:
-
-    echo 1 > ~/AutoRaise.delay
-
-To enable warp, run this command:
-
-    echo "0.5 0.5" > ~/AutoRaise.warp
-
-*Note2*: If you are not comfortable running the provided binary, then you can compile it yourself using this command:
-
-    g++ -O2 -Wall -fobjc-arc -o AutoRaise AutoRaise.mm -framework AppKit
-
-*Note3*: To create the AutoRaise.app bundle, in a bash terminal type:
-
-    ./create-app-bundle.sh
-
-Beware that AutoRaise.app runs on the background and can only be stopped again via "Activity Monitor" (or the applescript
-above). Also command line arguments are ignored which means the app bundle version relies totally on the AutoRaise.delay
-and AutoRaise.warp files in your home folder.
+*Note*: When upgrading from a previous AutoRaise version, it is a good idea to check you are not running two instances
+at the same time (the older and the new version). This can always be checked with "Activity Monitor"
 
 See also https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x

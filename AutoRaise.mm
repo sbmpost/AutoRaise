@@ -27,6 +27,7 @@
 
 extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out) __attribute__((weak_import));
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
+static CFStringRef XQuartz = CFSTR("XQuartz");
 static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
 static bool appWasActivated = false;
@@ -124,6 +125,26 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
                 CFEqual(_element_role, kAXDrawerRole)) {
                 CFRelease(_element_role);
                 return _element;
+            } else if (CFEqual(_element_role, kAXApplicationRole)) { // XQuartz special case
+                pid_t application_pid;
+                if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
+                    pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
+                        frontmostApplication] processIdentifier];
+                    if (application_pid != frontmost_pid) {
+                        CFStringRef _applicationTitle;
+                        if (AXUIElementCopyAttributeValue(
+                            _element,
+                            kAXTitleAttribute,
+                            (CFTypeRef *) &_applicationTitle
+                        ) == kAXErrorSuccess && CFEqual(_applicationTitle, XQuartz)) {
+                            CFRelease(_applicationTitle);
+                            activate(application_pid);
+                        }
+                    }
+                }
+
+                CFRelease(_element_role);
+                CFRelease(_element);
             } else {
                 AXUIElementRef _window = NULL;
                 AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *) &_window);
@@ -294,7 +315,7 @@ const void CppClass::appActivated(NSNotification * notification) {
     if (mouseMoved) { return; }
 
     appWasActivated = true;
-    pid_t application_pid = ((NSRunningApplication *) ((NSWorkspace *)
+    pid_t frontmost_pid = ((NSRunningApplication *) ((NSWorkspace *)
         notification.object).frontmostApplication).processIdentifier;
 
     AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
@@ -302,12 +323,12 @@ const void CppClass::appActivated(NSNotification * notification) {
         bool needs_warp = true;
         pid_t mouseWindow_pid;
         if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
-            needs_warp = mouseWindow_pid != application_pid;
+            needs_warp = mouseWindow_pid != frontmost_pid;
         }
 
         if (needs_warp) {
             CFTypeRef _focusedWindow = NULL;
-            AXUIElementRef _focusedApp = AXUIElementCreateApplication(application_pid);
+            AXUIElementRef _focusedApp = AXUIElementCreateApplication(frontmost_pid);
             AXUIElementCopyAttributeValue(
                 (AXUIElementRef) _focusedApp,
                 kAXFocusedWindowAttribute,
@@ -370,8 +391,9 @@ const void CppClass::onTick() {
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
                 Boolean needs_raise = true;
-                pid_t frontmost = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
-                AXUIElementRef _focusedApp = AXUIElementCreateApplication(frontmost);
+                pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
+                    frontmostApplication] processIdentifier];
+                AXUIElementRef _focusedApp = AXUIElementCreateApplication(frontmost_pid);
                 if (_focusedApp) {
                     AXUIElementRef _focusedWindow = NULL;
                     AXUIElementCopyAttributeValue(

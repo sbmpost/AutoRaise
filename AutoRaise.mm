@@ -25,6 +25,10 @@
 #include <Foundation/Foundation.h>
 #include <AppKit/AppKit.h>
 
+typedef int CGSConnectionID;
+extern "C" CGSConnectionID CGSMainConnectionID(void);
+extern "C" CGError CGSSetCursorScale(CGSConnectionID cid, float scale);
+// extern "C" CGError CGSGetCursorScale(CGSConnectionID cid, float *scale);
 extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out) __attribute__((weak_import));
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static CFStringRef XQuartz = CFSTR("XQuartz");
@@ -253,6 +257,8 @@ public:
     ~CppClass();
     const void spaceChanged(NSNotification * notification);
     const void appActivated(NSNotification * notification);
+    void scheduleScale(float scaleDelay, float scale, float oldScale);
+    const void setCursorScale(float scale);
     void startTimer(float timerInterval);
     const void onTick();
 };
@@ -287,8 +293,15 @@ public:
 - (void)appActivated:(NSNotification *)notification {
     cppClass->appActivated(notification);
 }
+- (void)scheduleScale:(NSNumber *)scaleDelay :(NSNumber *)scale :(NSNumber *)oldScale {
+    [self performSelector: @selector(onSetCursorScale:) withObject: scale afterDelay: scaleDelay.floatValue];
+    [self performSelector: @selector(onSetCursorScale:) withObject: oldScale afterDelay: scaleDelay.floatValue*3];
+}
+- (void)onSetCursorScale:(NSNumber *)scale {
+    cppClass->setCursorScale(scale.floatValue);
+}
 - (void)onTick:(NSNumber *)timerInterval {
-    [self performSelector:@selector(onTick:) withObject:timerInterval afterDelay:timerInterval.floatValue];
+    [self performSelector: @selector(onTick:) withObject: timerInterval afterDelay: timerInterval.floatValue];
     cppClass->onTick();
 }
 @end
@@ -300,6 +313,12 @@ CppClass::~CppClass() {}
 void CppClass::startTimer(float timerInterval) {
     [(MDWorkspaceWatcher *) workspaceWatcher onTick: [NSNumber numberWithFloat: timerInterval]];
 }
+void CppClass::scheduleScale(float scaleDelay, float scale, float oldScale) {
+    [(MDWorkspaceWatcher *) workspaceWatcher scheduleScale: [
+        NSNumber numberWithFloat: scaleDelay]:
+        [NSNumber numberWithFloat: scale]:
+        [NSNumber numberWithFloat: oldScale]];
+}
 const void CppClass::spaceChanged(NSNotification * notification) {
     spaceHasChanged = true;
     oldPoint.x = oldPoint.y = 0;
@@ -307,42 +326,52 @@ const void CppClass::spaceChanged(NSNotification * notification) {
 
 //------------------------------------------where it all happens--------------------------------------------
 
+#define CURSORSCALE 4
+#define SETSCALE_MS 300
 const void CppClass::appActivated(NSNotification * notification) {
     CGEventRef _event = CGEventCreate(NULL);
     CGPoint mousePoint = CGEventGetLocation(_event);
     if (_event) { CFRelease(_event); }
 
-    bool mouseMoved = fabs(mousePoint.x-oldPoint.x) > 0;
-    mouseMoved = mouseMoved || fabs(mousePoint.y-oldPoint.y) > 0;
-    if (mouseMoved) { return; }
-
     appWasActivated = true;
-    pid_t frontmost_pid = ((NSRunningApplication *) ((NSWorkspace *)
-        notification.object).frontmostApplication).processIdentifier;
+    NSDictionary * userInfo = notification.userInfo;
+    pid_t focusedApp_pid = ((NSRunningApplication *) userInfo[
+        NSWorkspaceApplicationKey]).processIdentifier;
 
     AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
     if (_mouseWindow) {
         bool needs_warp = true;
         pid_t mouseWindow_pid;
         if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
-            needs_warp = mouseWindow_pid != frontmost_pid;
+            needs_warp = mouseWindow_pid != focusedApp_pid;
         }
 
         if (needs_warp) {
-            CFTypeRef _focusedWindow = NULL;
-            AXUIElementRef _focusedApp = AXUIElementCreateApplication(frontmost_pid);
+            AXUIElementRef _focusedWindow = NULL;
+            AXUIElementRef _focusedApp = AXUIElementCreateApplication(focusedApp_pid);
             AXUIElementCopyAttributeValue(
                 (AXUIElementRef) _focusedApp,
                 kAXFocusedWindowAttribute,
-                &_focusedWindow);
+                (CFTypeRef *) &_focusedWindow);
             CFRelease(_focusedApp);
             if (_focusedWindow) {
                 CGWarpMouseCursorPosition(get_mousepoint((AXUIElementRef) _focusedWindow));
                 CFRelease(_focusedWindow);
+
+//                float oldCursorScale;
+                int connectionID = CGSMainConnectionID();
+//                if (CGSGetCursorScale(connectionID, &oldCursorScale) == kCGErrorSuccess) {
+                    scheduleScale(SETSCALE_MS/1000.0, CURSORSCALE, 1); // oldCursorScale);
+//                }
             }
         }
         CFRelease(_mouseWindow);
     }
+}
+
+const void CppClass::setCursorScale(float scale) {
+    int connectionID = CGSMainConnectionID();
+    CGSSetCursorScale(connectionID, scale);
 }
 
 const void CppClass::onTick() {

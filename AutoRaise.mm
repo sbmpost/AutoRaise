@@ -27,10 +27,13 @@
 
 typedef int CGSConnectionID;
 extern "C" CGSConnectionID CGSMainConnectionID(void);
-extern "C" CGError CGSSetCursorScale(CGSConnectionID cid, float scale);
-// extern "C" CGError CGSGetCursorScale(CGSConnectionID cid, float *scale);
+extern "C" CGError CGSSetCursorScale(CGSConnectionID connectionId, float scale);
+extern "C" CGError CGSGetCursorScale(CGSConnectionID connectionId, float *scale);
+// Note that cursor scaling is undocumented and subjective to incompatible changes
+
 extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out) __attribute__((weak_import));
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
+static CFStringRef Finder = CFSTR("com.apple.finder");
 static CFStringRef XQuartz = CFSTR("XQuartz");
 static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
@@ -38,6 +41,7 @@ static bool appWasActivated = false;
 static bool warpMouse = false;
 static float warpX = 0.5;
 static float warpY = 0.5;
+static float oldScale = 1;
 static int raiseTimes = 0;
 static int delayTicks = 0;
 static int delayCount = 0;
@@ -257,8 +261,7 @@ public:
     ~CppClass();
     const void spaceChanged(NSNotification * notification);
     const void appActivated(NSNotification * notification);
-    void scheduleScale(float scaleDelay, float scale, float oldScale);
-    const void setCursorScale(float scale);
+    void scheduleScale(float scale, float scaleDelay, bool needs_warp, bool failed_activation);
     void startTimer(float timerInterval);
     const void onTick();
 };
@@ -293,12 +296,28 @@ public:
 - (void)appActivated:(NSNotification *)notification {
     cppClass->appActivated(notification);
 }
-- (void)scheduleScale:(NSNumber *)scaleDelay :(NSNumber *)scale :(NSNumber *)oldScale {
-    [self performSelector: @selector(onSetCursorScale:) withObject: scale afterDelay: scaleDelay.floatValue];
-    [self performSelector: @selector(onSetCursorScale:) withObject: oldScale afterDelay: scaleDelay.floatValue*3];
+- (void)scheduleScale:(NSNumber *)scale :(NSNumber *)scaleDelay :(NSNumber *)needs_warp :(NSNumber *)failed_activation {
+    [self performSelector: @selector(onSetCursorScale:)
+        withObject: @[scale, scaleDelay, needs_warp, failed_activation]
+        afterDelay: scaleDelay.floatValue];
 }
-- (void)onSetCursorScale:(NSNumber *)scale {
-    cppClass->setCursorScale(scale.floatValue);
+- (void)onSetCursorScale:(NSArray *)args {
+    NSNumber *scale = args[0];
+    NSNumber *scaleDelay = args[1];
+    NSNumber *needs_warp = args[2];
+    NSNumber *failed_activation = args[3];
+
+    if (needs_warp.boolValue || (failed_activation.boolValue && !spaceHasChanged)) {
+        CGSSetCursorScale(CGSMainConnectionID(), scale.floatValue);
+        [self performSelector: @selector(onResetCursorScale:)
+            withObject: nil
+            afterDelay: scaleDelay.floatValue*3];
+    }
+
+    spaceHasChanged = false;
+}
+- (void)onResetCursorScale:(NSObject *)object {
+    CGSSetCursorScale(CGSMainConnectionID(), oldScale);
 }
 - (void)onTick:(NSNumber *)timerInterval {
     [self performSelector: @selector(onTick:) withObject: timerInterval afterDelay: timerInterval.floatValue];
@@ -313,11 +332,12 @@ CppClass::~CppClass() {}
 void CppClass::startTimer(float timerInterval) {
     [(MDWorkspaceWatcher *) workspaceWatcher onTick: [NSNumber numberWithFloat: timerInterval]];
 }
-void CppClass::scheduleScale(float scaleDelay, float scale, float oldScale) {
+void CppClass::scheduleScale(float scale, float scaleDelay, bool needs_warp, bool failed_activation) {
     [(MDWorkspaceWatcher *) workspaceWatcher scheduleScale: [
-        NSNumber numberWithFloat: scaleDelay]:
-        [NSNumber numberWithFloat: scale]:
-        [NSNumber numberWithFloat: oldScale]];
+        NSNumber numberWithFloat: scale]:
+        [NSNumber numberWithFloat: scaleDelay]:
+        [NSNumber numberWithBool: needs_warp]:
+        [NSNumber numberWithBool: failed_activation]];
 }
 const void CppClass::spaceChanged(NSNotification * notification) {
     spaceHasChanged = true;
@@ -326,7 +346,7 @@ const void CppClass::spaceChanged(NSNotification * notification) {
 
 //------------------------------------------where it all happens--------------------------------------------
 
-#define CURSORSCALE 4
+#define MAXSCALE 4
 #define SETSCALE_MS 300
 const void CppClass::appActivated(NSNotification * notification) {
     CGEventRef _event = CGEventCreate(NULL);
@@ -334,17 +354,31 @@ const void CppClass::appActivated(NSNotification * notification) {
     if (_event) { CFRelease(_event); }
 
     appWasActivated = true;
-    NSDictionary * userInfo = notification.userInfo;
-    pid_t focusedApp_pid = ((NSRunningApplication *) userInfo[
-        NSWorkspaceApplicationKey]).processIdentifier;
+    NSRunningApplication *focusedApp = (NSRunningApplication *) notification.userInfo[NSWorkspaceApplicationKey];
+    CFStringRef bundleIdentifier = (__bridge CFStringRef) focusedApp.bundleIdentifier;
+    pid_t focusedApp_pid = focusedApp.processIdentifier;
 
+    bool needs_warp = false;
     AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
     if (_mouseWindow) {
-        bool needs_warp = true;
         pid_t mouseWindow_pid;
         if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
-            needs_warp = mouseWindow_pid != focusedApp_pid;
+            needs_warp = mouseWindow_pid != focusedApp_pid && !CFEqual(bundleIdentifier, Finder);
         }
+        CFRelease(_mouseWindow);
+
+// TODO: requires intensive testing
+if (needs_warp) {
+    bool mouseMoved = fabs(mousePoint.x-oldPoint.x) > 0;
+    mouseMoved = mouseMoved || fabs(mousePoint.y-oldPoint.y) > 0;
+    if (mouseMoved) {
+//       NSLog(@"mouse moved");
+       needs_warp = false;
+    } else if (spaceHasChanged) {
+//       NSLog(@"space has changed");
+       needs_warp = false;
+    }
+}
 
         if (needs_warp) {
             AXUIElementRef _focusedWindow = NULL;
@@ -357,21 +391,12 @@ const void CppClass::appActivated(NSNotification * notification) {
             if (_focusedWindow) {
                 CGWarpMouseCursorPosition(get_mousepoint((AXUIElementRef) _focusedWindow));
                 CFRelease(_focusedWindow);
-
-//                float oldCursorScale;
-                int connectionID = CGSMainConnectionID();
-//                if (CGSGetCursorScale(connectionID, &oldCursorScale) == kCGErrorSuccess) {
-                    scheduleScale(SETSCALE_MS/1000.0, CURSORSCALE, 1); // oldCursorScale);
-//                }
             }
         }
-        CFRelease(_mouseWindow);
     }
-}
 
-const void CppClass::setCursorScale(float scale) {
-    int connectionID = CGSMainConnectionID();
-    CGSSetCursorScale(connectionID, scale);
+    pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
+    scheduleScale(fmin(MAXSCALE, oldScale+2), SETSCALE_MS/1000.0, needs_warp, frontmost_pid == focusedApp_pid);
 }
 
 const void CppClass::onTick() {
@@ -398,7 +423,12 @@ const void CppClass::onTick() {
         if (mouseMoved) { return; }
         raiseTimes = 3;
         delayTicks = 0;
-        spaceHasChanged = false;
+        if (warpMouse) {
+// TODO: requires intensive testing
+// NSLog(@"waiting for space has changed reset");
+        } else {
+            spaceHasChanged = false;
+        }
     } else if (delayTicks && mouseMoved) {
         delayTicks = 0;
         // propagate the mouseMoved event
@@ -515,6 +545,7 @@ int main(int argc, const char * argv[]) {
 
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
         AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);
+        CGSGetCursorScale(CGSMainConnectionID(), &oldScale);
 
         CppClass cppClass = CppClass();
         cppClass.startTimer(POLLING_MS/1000.0);

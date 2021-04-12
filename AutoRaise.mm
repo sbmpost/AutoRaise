@@ -307,7 +307,9 @@ public:
     NSNumber *needs_warp = args[2];
     NSNumber *failed_activation = args[3];
 
-    if (needs_warp.boolValue || (failed_activation.boolValue && !spaceHasChanged)) {
+    if (needs_warp.boolValue) {
+// TODO: requires intensive testing
+// || (failed_activation.boolValue && !spaceHasChanged)) {
         CGSSetCursorScale(CGSMainConnectionID(), scale.floatValue);
         [self performSelector: @selector(onResetCursorScale:)
             withObject: nil

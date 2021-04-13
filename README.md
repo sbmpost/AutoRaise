@@ -1,6 +1,6 @@
 When you hover a window it will be raised to the front (with a delay of your choosing) and gets the focus. There is also an
-option to warp the mouse to the center of the activated window, using the cmd-tab key combination for example. To use AutoRaise,
-you can download the master branch from [here](https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip) and use these
+option to warp the mouse to the center of the activated window when using the cmd-tab key combination. To use AutoRaise, you
+can download the master branch from [here](https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip) and use these
 commands to compile the binaries:
 
     unzip -d ~ ~/Downloads/AutoRaise-master.zip

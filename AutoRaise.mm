@@ -304,7 +304,7 @@ public:
         afterDelay: scaleDelay.floatValue];
     [self performSelector: @selector(onSetCursorScale:)
         withObject: [NSNumber numberWithFloat: oldScale]
-        afterDelay: scaleDelay.floatValue*2];
+        afterDelay: scaleDelay.floatValue*3];
 }
 - (void)onSetCursorScale:(NSNumber *)scale {
     CGSSetCursorScale(CGSMainConnectionID(), scale.floatValue);
@@ -340,6 +340,7 @@ const void CppClass::spaceChanged(NSNotification * notification) {
 #define SETSCALE_MS 300
 const void CppClass::appActivated(NSNotification * notification) {
     if (!activated_by_task_switcher) { return; }
+    activated_by_task_switcher = false;
     appWasActivated = true;
 
     NSRunningApplication *focusedApp = (NSRunningApplication *) notification.userInfo[NSWorkspaceApplicationKey];
@@ -359,7 +360,7 @@ const void CppClass::appActivated(NSNotification * notification) {
         }
     }
 
-    scheduleScale(fmin(MAXSCALE, oldScale + 2), SETSCALE_MS/1000.0);
+    scheduleScale(fmin(MAXSCALE, oldScale*2), SETSCALE_MS/1000.0);
 }
 
 const void CppClass::onTick() {
@@ -524,8 +525,10 @@ int main(int argc, const char * argv[]) {
             (1 << kCGEventKeyUp) | (1 << kCGEventFlagsChanged), eventTapHandler, NULL);
         if (eventTap) {
             CFRunLoopSourceRef runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0);
-            CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, kCFRunLoopCommonModes);
-            CGEventTapEnable(eventTap, true);
+            if (runLoopSource) {
+                CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, kCFRunLoopCommonModes);
+                CGEventTapEnable(eventTap, true);
+            }
         }
 
         CppClass cppClass = CppClass();

@@ -300,7 +300,8 @@ public:
 }
 - (void)scheduleScale:(NSNumber *)scale :(NSNumber *)scaleDelay {
     [self performSelector: @selector(onSetCursorScale:)
-        withObject: scale afterDelay: scaleDelay.floatValue];
+        withObject: scale
+        afterDelay: scaleDelay.floatValue];
     [self performSelector: @selector(onSetCursorScale:)
         withObject: [NSNumber numberWithFloat: oldScale]
         afterDelay: scaleDelay.floatValue*2];

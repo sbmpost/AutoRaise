@@ -541,7 +541,7 @@ if (argc >= 8) {
         printf("\nBy sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5>] -scale <true|false>"
                "\nStarted with %d ms delay%s", POLLING_MS, delayCount*POLLING_MS, warpMouse ? ", " : "\n");
         if (warpMouse) { printf("warpX: %.1f, warpY: %.1f\n", warpX, warpY); }
-        printf("version 1.7a (debug version), cursor scaling enabled: %d\n\n", scaleEnabled);
+        printf("version 1.7d (debug version), cursor scaling enabled: %d\n\n", scaleEnabled);
 
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
         AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);

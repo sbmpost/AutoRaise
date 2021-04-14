@@ -489,7 +489,11 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
             commandTabPressed = (flags & kCGEventFlagMaskCommand) == kCGEventFlagMaskCommand;
         }
     }
-NSLog(@"activated by task switcher");
+
+if (activated_by_task_switcher) {
+    NSLog(@"activated by task switcher");
+}
+
     return event;
 }
 

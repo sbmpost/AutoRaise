@@ -27,6 +27,7 @@
 #include <Carbon/Carbon.h>
 
 typedef int CGSConnectionID;
+static bool scaleEnabled = false;
 static bool activated_by_task_switcher = false;
 extern "C" CGSConnectionID CGSMainConnectionID(void);
 extern "C" CGError CGSSetCursorScale(CGSConnectionID connectionId, float scale);
@@ -341,6 +342,19 @@ const void CppClass::spaceChanged(NSNotification * notification) {
 const void CppClass::appActivated(NSNotification * notification) {
     if (!activated_by_task_switcher) { return; }
     activated_by_task_switcher = false;
+
+NSLog(@"app activated");
+
+    CGEventRef _event = CGEventCreate(NULL);
+    CGPoint mousePoint = CGEventGetLocation(_event);
+    if (_event) { CFRelease(_event); }
+
+    bool mouseMoved = fabs(mousePoint.x-oldPoint.x) > 0;
+    mouseMoved = mouseMoved || fabs(mousePoint.y-oldPoint.y) > 0;
+    if (mouseMoved) {
+NSLog(@"returning as the mouse has moved");
+    }
+
     appWasActivated = true;
 
     NSRunningApplication *focusedApp = (NSRunningApplication *) notification.userInfo[NSWorkspaceApplicationKey];
@@ -355,12 +369,15 @@ const void CppClass::appActivated(NSNotification * notification) {
             (CFTypeRef *) &_focusedWindow);
         CFRelease(_focusedApp);
         if (_focusedWindow) {
+NSLog(@"warp the mouse");
             CGWarpMouseCursorPosition(get_mousepoint((AXUIElementRef) _focusedWindow));
             CFRelease(_focusedWindow);
         }
     }
 
+if (scaleEnabled) {
     scheduleScale(fmin(MAXSCALE, oldScale*2), SETSCALE_MS/1000.0);
+}
 }
 
 const void CppClass::onTick() {
@@ -442,6 +459,7 @@ const void CppClass::onTick() {
                         if (raiseTimes) { raiseTimes--; }
                         else { raiseTimes = 3; }
 
+NSLog(@"raise/activate");
                         // raise mousewindow
                         if (AXUIElementPerformAction(_mouseWindow, kAXRaiseAction) == kAXErrorSuccess) {
                             activate(mouseWindow_pid);
@@ -471,7 +489,7 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
             commandTabPressed = (flags & kCGEventFlagMaskCommand) == kCGEventFlagMaskCommand;
         }
     }
-
+NSLog(@"activated by task switcher");
     return event;
 }
 
@@ -486,6 +504,9 @@ int main(int argc, const char * argv[]) {
                 warpX = [standardDefaults floatForKey: @"warpX"];
                 warpY = [standardDefaults floatForKey: @"warpY"];
             }
+if (argc >= 8) {
+    scaleEnabled = [standardDefaults boolForKey: @"scale"];
+}
         } else {
             NSString * home = NSHomeDirectory();
             NSFileHandle * delayFile = [NSFileHandle fileHandleForReadingAtPath:
@@ -513,9 +534,10 @@ int main(int argc, const char * argv[]) {
         }
         if (!delayCount) { delayCount = 2; }
 
-        printf("\nBy sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5>]"
+        printf("\nBy sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5>] -scale <true|false>"
                "\nStarted with %d ms delay%s", POLLING_MS, delayCount*POLLING_MS, warpMouse ? ", " : "\n");
         if (warpMouse) { printf("warpX: %.1f, warpY: %.1f\n", warpX, warpY); }
+        printf("version 1.7a (debug version), cursor scaling enabled: %d\n\n", scaleEnabled);
 
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
         AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);
@@ -528,6 +550,7 @@ int main(int argc, const char * argv[]) {
             if (runLoopSource) {
                 CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, kCFRunLoopCommonModes);
                 CGEventTapEnable(eventTap, true);
+NSLog(@"event tap enabled");
             }
         }
 

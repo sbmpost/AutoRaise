@@ -22,8 +22,8 @@ Command line usage:
 The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. If the mouse is warped, the scale
 parameter allows you to specify the mouse cursor size. To disable the scaling feature, simply set the value equal to the system
 configured scale (normally 1.0). If no parameters have been specified, AutoRaise first looks for an AutoRaise.delay file in the
-**home** folder and defaults to 40ms if it can't find one. Likewise, it will check for the existence of an AutoRaise.warp file.
-In order to pass the parameters from the example above by means of these configuration files, run these commands once:
+**home** folder and defaults to 40ms delay if it can't find one. Likewise, it will check for the existence of an AutoRaise.warp
+file. In order to pass the parameters from the example above by means of these configuration files, run these commands once:
 
     echo 1 > ~/AutoRaise.delay
     echo "0.5 0.1 2.5" > ~/AutoRaise.warp

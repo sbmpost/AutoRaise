@@ -475,48 +475,140 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 }
 
 #define POLLING_MS 20
+#define VERSION "1.8"
 int main(int argc, const char * argv[]) {
+    printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5> -scale <2.0>]", VERSION, POLLING_MS);
     @autoreleasepool {
-        if (argc >= 3) {
-            NSUserDefaults * standardDefaults = [NSUserDefaults standardUserDefaults];
-            delayCount = abs((int) [standardDefaults integerForKey: @"delay"]);
-            warpMouse = argc != 3 ;
-            if (argc >= 7) {
-                warpX = [standardDefaults floatForKey: @"warpX"];
-                warpY = [standardDefaults floatForKey: @"warpY"];
-                if (argc >= 8) {
-                    cursorScale = [standardDefaults floatForKey: @"scale"];
+        
+        #define defaultDelay @"delay"
+        #define defaultWarpX @"warpX"
+        #define defaultWarpY @"warpY"
+        #define defaultScale @"scale"
+        
+        // initial values for standardDefaults
+        NSDictionary* standardDefaults = @{defaultDelay:@-1,
+                                           defaultWarpX:@-1.0,
+                                           defaultWarpY:@-1.0,
+                                           defaultScale:@2.0 };
+        
+        // sync standardDefaults with command-line arguments
+        [[NSUserDefaults standardUserDefaults] registerDefaults:standardDefaults];
+        
+        // put initial values to our variables
+        delayCount = (int) [[NSUserDefaults standardUserDefaults] integerForKey:defaultDelay];
+        warpX = (float) [[NSUserDefaults standardUserDefaults] floatForKey:defaultWarpX];
+        warpY = (float) [[NSUserDefaults standardUserDefaults] floatForKey:defaultWarpY];
+        cursorScale = (float) [[NSUserDefaults standardUserDefaults] floatForKey:defaultScale];
+
+        // if there are any arguments, we would use only them
+        if (argc > 1) {
+            // but if -delay argument not valid, we would exit
+            if (not (delayCount > 0)) {
+                fprintf(stderr, "No valid arguments\nRun without any arguments to use default settings");
+                return 0;
+            }
+            // check is there valid warps
+            if (warpX >= 0 and warpX <= 1 and warpY >= 0 and warpY <= 1) { warpMouse = true; }
+        } else {
+            // we are looking for config files
+            NSString * home = NSHomeDirectory();
+            
+            NSString * oldStyleDelayFile   = [NSString stringWithFormat: @"%@/AutoRaise.delay",          home];
+            NSString * oldStyleWarpFile    = [NSString stringWithFormat: @"%@/AutoRaise.warp",           home];
+            NSString * newStyleConfigFile1 = [NSString stringWithFormat: @"%@/.AutoRaise",               home];
+            NSString * newStyleConfigFile2 = [NSString stringWithFormat: @"%@/.config/AutoRaise/config", home];
+            
+            #define isFileExist(string) [[NSFileManager defaultManager] fileExistsAtPath:string]
+            
+            // old style config files
+            if (isFileExist(oldStyleDelayFile) or isFileExist(oldStyleWarpFile)) {
+                NSFileHandle * delayFile = [NSFileHandle fileHandleForReadingAtPath: oldStyleDelayFile];
+                if (delayFile) {
+                    delayCount = abs([[[NSString alloc] initWithData:
+                        [delayFile readDataOfLength: 2] encoding:
+                        NSUTF8StringEncoding] intValue]);
+                    [delayFile closeFile];
+                }
+                NSFileHandle * warpFile = [NSFileHandle fileHandleForReadingAtPath: oldStyleWarpFile];
+                if (warpFile) {
+                    warpMouse = true;
+                    NSString * line = [[NSString alloc] initWithData:
+                        [warpFile readDataOfLength:11] encoding:
+                        NSUTF8StringEncoding];
+                    NSArray * components = [line componentsSeparatedByString: @" "];
+                    if (components.count >= 1) { warpX = [[components objectAtIndex:0] floatValue]; }
+                    if (components.count >= 2) { warpY = [[components objectAtIndex:1] floatValue]; }
+                    if (components.count >= 3) { cursorScale = [[components objectAtIndex:2] floatValue]; }
+                    [warpFile closeFile];
+                }
+                
+            } else {
+                
+            //new style config files (if there are no old style config files)
+                NSString * newStyleConfigFile;
+                if (isFileExist(newStyleConfigFile1)) { newStyleConfigFile = newStyleConfigFile1; }
+                else if (isFileExist(newStyleConfigFile2)) { newStyleConfigFile = newStyleConfigFile2; }
+                
+                if (newStyleConfigFile) {
+                    NSError  * error;
+                    NSString * newStyleConfig = [[NSString alloc]
+                                                initWithContentsOfFile: newStyleConfigFile
+                                                encoding: NSUTF8StringEncoding
+                                                error: &error];
+                    
+                    while ([newStyleConfig containsString:@"  " ]) {
+                        newStyleConfig = [newStyleConfig stringByReplacingOccurrencesOfString:@"  " withString:@" "];
+                    }
+               
+                    NSArray  * newStyleConfigLines = [newStyleConfig componentsSeparatedByString:@"\n"];
+
+                    NSString * newStyleConfigLine;
+                    NSArray  * temporaryConfigDictionary = @[@"delay", @"warpx", @"warpy", @"scale"];
+                    int newStyleConfigDelay = -1;
+                    float newStyleConfigWarpX = -1.0;
+                    float newStyleConfigWarpY = -1.0;
+                    float newStyleConfigScale = -1.0;
+
+                    for ( int i = 0; i < [newStyleConfigLines count]; i++) {
+                        newStyleConfigLine = [[newStyleConfigLines objectAtIndex: i]
+                                                        stringByTrimmingCharactersInSet: [NSCharacterSet characterSetWithCharactersInString:@" "]] ;
+                        newStyleConfigLine = [newStyleConfigLine lowercaseString];
+
+                        if (not [newStyleConfigLine hasPrefix:@"#"]) {
+
+                            NSArray *newStyleConfigLineItems = [newStyleConfigLine componentsSeparatedByString:@" "];
+                            if ([newStyleConfigLineItems count] == 2) {
+                                switch ([temporaryConfigDictionary indexOfObject:newStyleConfigLineItems[0] ]) {
+                                    case 0:  // delay
+                                         newStyleConfigDelay = [newStyleConfigLineItems[1] intValue];
+                                        break;
+                                    case 1:  // warpX
+                                         newStyleConfigWarpX = [newStyleConfigLineItems[1] floatValue];
+                                        break;
+                                    case 2:  // warpY
+                                         newStyleConfigWarpY = [newStyleConfigLineItems[1] floatValue];
+                                        break;
+                                    case 3:  // scale
+                                         newStyleConfigScale = [newStyleConfigLineItems[1] floatValue];
+                                        break;
+                                    default: // ignore
+                                        break;
+                                }
+                            }
+                        }
+                    }
+                    if (newStyleConfigDelay > 0) { delayCount = newStyleConfigDelay; }
+                    if (newStyleConfigWarpX >= 0 and newStyleConfigWarpX <= 1) { warpX = newStyleConfigWarpX; }
+                    if (newStyleConfigWarpY >= 0 and newStyleConfigWarpY <= 1) { warpY = newStyleConfigWarpY; }
+                    if (warpX >= 0 and warpX <= 1 and warpY >= 0 and warpY <= 1) { warpMouse = true; }
+                    if (newStyleConfigScale >= 1) { cursorScale = newStyleConfigScale; }
                 }
             }
-        } else {
-            NSString * home = NSHomeDirectory();
-            NSFileHandle * delayFile = [NSFileHandle fileHandleForReadingAtPath:
-                [NSString stringWithFormat: @"%@/AutoRaise.delay", home]];
-            if (delayFile) {
-                delayCount = abs([[[NSString alloc] initWithData:
-                    [delayFile readDataOfLength: 2] encoding:
-                    NSUTF8StringEncoding] intValue]);
-                [delayFile closeFile];
-            }
-            NSFileHandle * warpFile = [NSFileHandle fileHandleForReadingAtPath:
-                [NSString stringWithFormat: @"%@/AutoRaise.warp", home]];
-            if (warpFile) {
-                warpMouse = true;
-                NSString * line = [[NSString alloc] initWithData:
-                    [warpFile readDataOfLength:11] encoding:
-                    NSUTF8StringEncoding];
-                NSArray * components = [line componentsSeparatedByString: @" "];
-                if (components.count >= 1) { warpX = [[components objectAtIndex:0] floatValue]; }
-                if (components.count >= 2) { warpY = [[components objectAtIndex:1] floatValue]; }
-                if (components.count >= 3) { cursorScale = [[components objectAtIndex:2] floatValue]; }
-                [warpFile closeFile];
-            }
         }
-        if (!delayCount) { delayCount = 2; }
-        if (!cursorScale) { cursorScale = 2; }
-
-        printf("\nBy sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5> -scale <2.5>]"
-               "\nv1.8 started with %d ms delay%s", POLLING_MS, delayCount*POLLING_MS, warpMouse ? ", " : "\n");
+        
+        if (delayCount  <= 0) { delayCount = 2; }
+        
+        printf("\nStarted with %d ms delay%s", delayCount*POLLING_MS, warpMouse ? ", " : "\n");
         if (warpMouse) { printf("warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale); }
 
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};

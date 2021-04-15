@@ -17,15 +17,16 @@ runs on the background and can only be stopped via "Activity Monitor" or the App
 
 Command line usage:
 
-    ./AutoRaise -delay 1 -warpX 0.5 -warpY 0.5
+    ./AutoRaise -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5
 
-The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. If no parameters have been specified,
-AutoRaise first looks for an AutoRaise.delay file in the **home** folder and defaults to 40ms if it can't find one. Likewise,
-it will check for the existence of an AutoRaise.warp file. In order to pass the parameters from the example above by means of
-these configuration files, it is sufficient to run these commands once:
+The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. If the mouse is warped, the scale
+parameter allows you to specify the mouse cursor size. To disable the scaling feature, simply set the value equal to the system
+configured scale (normally 1.0). If no parameters have been specified, AutoRaise first looks for an AutoRaise.delay file in the
+**home** folder and defaults to 40ms if it can't find one. Likewise, it will check for the existence of an AutoRaise.warp file.
+In order to pass the parameters from the example above by means of these configuration files, run these commands once:
 
     echo 1 > ~/AutoRaise.delay
-    echo "0.5 0.5" > ~/AutoRaise.warp
+    echo "0.5 0.1 2.5" > ~/AutoRaise.warp
 
 AutoRaise.app usage:
 

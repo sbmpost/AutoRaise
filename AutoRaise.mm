@@ -27,6 +27,8 @@
 #include <Carbon/Carbon.h>
 
 typedef int CGSConnectionID;
+static float oldScale = 1;
+static float cursorScale = 2;
 static bool activated_by_task_switcher = false;
 extern "C" CGSConnectionID CGSMainConnectionID(void);
 extern "C" CGError CGSSetCursorScale(CGSConnectionID connectionId, float scale);
@@ -35,7 +37,6 @@ extern "C" CGError CGSGetCursorScale(CGSConnectionID connectionId, float *scale)
 
 extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out) __attribute__((weak_import));
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
-static CFStringRef Finder = CFSTR("com.apple.finder");
 static CFStringRef XQuartz = CFSTR("XQuartz");
 static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
@@ -43,7 +44,6 @@ static bool appWasActivated = false;
 static bool warpMouse = false;
 static float warpX = 0.5;
 static float warpY = 0.5;
-static float oldScale = 1;
 static int raiseTimes = 0;
 static int delayTicks = 0;
 static int delayCount = 0;
@@ -336,31 +336,30 @@ const void CppClass::spaceChanged(NSNotification * notification) {
 
 //------------------------------------------where it all happens--------------------------------------------
 
-#define MAXSCALE 4
-#define SETSCALE_MS 300
+#define SCALEDELAY_MS 300
 const void CppClass::appActivated(NSNotification * notification) {
     if (!activated_by_task_switcher) { return; }
     activated_by_task_switcher = false;
     appWasActivated = true;
 
-    NSRunningApplication *focusedApp = (NSRunningApplication *) notification.userInfo[NSWorkspaceApplicationKey];
-    CFStringRef bundleIdentifier = (__bridge CFStringRef) focusedApp.bundleIdentifier;
-    pid_t focusedApp_pid = focusedApp.processIdentifier;
-    if (!CFEqual(bundleIdentifier, Finder)) {
-        AXUIElementRef _focusedWindow = NULL;
-        AXUIElementRef _focusedApp = AXUIElementCreateApplication(focusedApp_pid);
-        AXUIElementCopyAttributeValue(
-            (AXUIElementRef) _focusedApp,
-            kAXFocusedWindowAttribute,
-            (CFTypeRef *) &_focusedWindow);
-        CFRelease(_focusedApp);
-        if (_focusedWindow) {
-            CGWarpMouseCursorPosition(get_mousepoint((AXUIElementRef) _focusedWindow));
-            CFRelease(_focusedWindow);
-        }
+    pid_t focusedApp_pid = ((NSRunningApplication *) notification.userInfo[
+        NSWorkspaceApplicationKey]).processIdentifier;
+    AXUIElementRef _focusedWindow = NULL;
+    AXUIElementRef _focusedApp = AXUIElementCreateApplication(focusedApp_pid);
+    AXUIElementCopyAttributeValue(
+        (AXUIElementRef) _focusedApp,
+        kAXFocusedWindowAttribute,
+        (CFTypeRef *) &_focusedWindow);
+    CFRelease(_focusedApp);
+
+    if (_focusedWindow) {
+        CGWarpMouseCursorPosition(get_mousepoint((AXUIElementRef) _focusedWindow));
+        CFRelease(_focusedWindow);
     }
 
-    scheduleScale(fmin(MAXSCALE, oldScale*2), SETSCALE_MS/1000.0);
+    if (cursorScale != oldScale) {
+        scheduleScale(cursorScale, SCALEDELAY_MS/1000.0);
+    }
 }
 
 const void CppClass::onTick() {
@@ -485,6 +484,9 @@ int main(int argc, const char * argv[]) {
             if (argc >= 7) {
                 warpX = [standardDefaults floatForKey: @"warpX"];
                 warpY = [standardDefaults floatForKey: @"warpY"];
+                if (argc >= 8) {
+                    cursorScale = [standardDefaults floatForKey: @"scale"];
+                }
             }
         } else {
             NSString * home = NSHomeDirectory();
@@ -501,21 +503,21 @@ int main(int argc, const char * argv[]) {
             if (warpFile) {
                 warpMouse = true;
                 NSString * line = [[NSString alloc] initWithData:
-                    [warpFile readDataOfLength:7] encoding:
+                    [warpFile readDataOfLength:11] encoding:
                     NSUTF8StringEncoding];
                 NSArray * components = [line componentsSeparatedByString: @" "];
-                if (components.count) {
-                    warpX = [components.firstObject floatValue];
-                    warpY = [components.lastObject floatValue];
-                }
+                if (components.count >= 1) { warpX = [[components objectAtIndex:0] floatValue]; }
+                if (components.count >= 2) { warpY = [[components objectAtIndex:1] floatValue]; }
+                if (components.count >= 3) { cursorScale = [[components objectAtIndex:2] floatValue]; }
                 [warpFile closeFile];
             }
         }
         if (!delayCount) { delayCount = 2; }
+        if (!cursorScale) { cursorScale = 2; }
 
-        printf("\nBy sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5>]"
-               "\nStarted with %d ms delay%s", POLLING_MS, delayCount*POLLING_MS, warpMouse ? ", " : "\n");
-        if (warpMouse) { printf("warpX: %.1f, warpY: %.1f\n", warpX, warpY); }
+        printf("\nBy sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5> -scale <2.5>]"
+               "\nv1.8 started with %d ms delay%s", POLLING_MS, delayCount*POLLING_MS, warpMouse ? ", " : "\n");
+        if (warpMouse) { printf("warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale); }
 
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
         AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);

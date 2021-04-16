@@ -28,13 +28,14 @@ file. In order to pass the parameters from the example above by means of these c
     echo 1 > ~/AutoRaise.delay
     echo "0.5 0.1 2.5" > ~/AutoRaise.warp
 
-Using of **~/.AutoRaise** or **~/.config/AutoRaise/config** also possible:
+Update (2021-04-17): 
+In addition to the configuration files mentioned above, AutoRaise now supports hidden configuration files in these locations: **~/.AutoRaise** or **~/.config/AutoRaise/config**. The format of these files is as follows:
 
     #AutoRaise config file
-    delay 1 
-    warpX 0.5
-    warpY 0.3
-    scale 1.8
+    delay=1 
+    warpX=0.5
+    warpY=0.3
+    scale=8
 
 AutoRaise.app usage:
 

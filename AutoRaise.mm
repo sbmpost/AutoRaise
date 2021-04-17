@@ -343,44 +343,24 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 #define _scale parameters[@"scale"]
 #define _warpMouse parameters[@"warpMouse"]
 
-NSArray *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
+NSArray   *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
 
 @interface ConfigClass:NSObject
-- (bool)  notNull: (id) key;
-- (int)   toInt  : (id) key;
-- (float) toFloat: (id) key;
-
-- (bool)         fileExist: (NSString *) filename;
 - (NSString *) getFilePath: (NSString *) filename;
-
-- (bool) readOriginalConfig;
 - (void) readCommandLineConfig;
+- (bool) readOriginalConfig;
 - (void) readHiddenConfig;
 - (void) validateParameters;
 @end
 
 @implementation ConfigClass
 
-#define notNull(a) [self notNull: a]
-- (bool) notNull: (id) key {
-    return (key != NULL); }
-
-#define toInt(a) [self toInt: a]
-- (int) toInt: (id) key {
-    return [key integerValue]; }
-
-#define toFloat(a) [self toFloat: a]
-- (float) toFloat: (id) key {
-    return [key floatValue]; }
-
-- (bool) fileExist: (NSString *) filename {
-    filename = [NSString stringWithFormat: @"%@/%@", NSHomeDirectory(), filename];
-    return [[NSFileManager defaultManager] fileExistsAtPath: filename]; }
-
 - (NSString *) getFilePath: (NSString *) filename {
     filename = [NSString stringWithFormat: @"%@/%@", NSHomeDirectory(), filename];
     if (not [[NSFileManager defaultManager] fileExistsAtPath: filename]) { filename = @""; }
-    return filename; }
+    return filename;
+}
+#define fileExist(filename) ([[self getFilePath: filename] length] > 0)
 
 - (void) readCommandLineConfig {
     // read NSArgumentDomain
@@ -388,16 +368,17 @@ NSArray *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
 
     for (id key in parametersDictionary) {
         id arg = [arguments objectForKey: key];
-        if ([self notNull: arg]) { parameters[key] = arg; }
+        if (arg != NULL) { parameters[key] = arg; }
     }
-    return; }
+    return;
+}
 
 - (bool) readOriginalConfig {
     // original config files:
     NSString *delayFile = @"AutoRaise.delay";
     NSString *warpFile  = @"AutoRaise.warp";
     
-    if ([self fileExist: delayFile]) {
+    if (fileExist(delayFile)) {
         NSFileHandle *hDelayFile = [NSFileHandle fileHandleForReadingAtPath: [self getFilePath: delayFile]];
         if (hDelayFile) {
             _delay= @(abs([[[NSString alloc] initWithData:
@@ -407,7 +388,7 @@ NSArray *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
         }
     }
         
-    if ([self fileExist: warpFile]) {
+    if (fileExist(warpFile)) {
         NSFileHandle *hWarpFile = [NSFileHandle fileHandleForReadingAtPath: [self getFilePath: warpFile]];
         if (hWarpFile) {
             NSString *line = [[NSString alloc] initWithData:
@@ -422,18 +403,19 @@ NSArray *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
     }
 
     // return true if any of original config files has been found
-    return ([self fileExist: delayFile] or [self fileExist: warpFile]); }
+    return (fileExist(delayFile) or fileExist(warpFile));
+}
 
 - (void)  readHiddenConfig {
     // search for dotfiles
     NSString *hiddenConfigFile = @"";
-    if ([self fileExist: @".AutoRaise"]) {
+    if (fileExist(@".AutoRaise")) {
         hiddenConfigFile = @".AutoRaise";
     } else {
-        if ([self fileExist: @".config/AutoRaise/config"]) { hiddenConfigFile = @".config/AutoRaise/config"; }
+        if (fileExist(@".config/AutoRaise/config")) { hiddenConfigFile = @".config/AutoRaise/config"; }
     }
     
-    if ([self fileExist: hiddenConfigFile]) {
+    if (fileExist(hiddenConfigFile)) {
         NSError  *error;
         NSString *hiddenConfigFileContent = [[NSString alloc]
                                              initWithContentsOfFile: [self getFilePath: hiddenConfigFile]
@@ -458,18 +440,21 @@ NSArray *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
             }
         }
     }
-    return; }
+    return;
+}
 
 - (void) validateParameters {
     // validating and fixing wrong/absent parameters
-    if (toInt(_delay) < 1) { _delay= @"2"; }
-    if (toFloat(_scale) < 1) { _scale = @"1.0"; }
-    if (notNull(_warpX) and notNull(_warpY) and toFloat(_warpX) >= 0 and toFloat(_warpX) <= 1 and toFloat(_warpY) >=0 and toFloat(_warpY) <= 1) {
+    if ([_delay intValue]   < 1) { _delay = @"2"; }
+    if ([_scale floatValue] < 1) { _scale = @"1.0"; }
+    if ((_warpX != NULL) and [_warpX floatValue] >= 0 and [_warpX floatValue] <= 1 &&
+        (_warpY != NULL) and [_warpY floatValue] >= 0 and [_warpY floatValue] <= 1) {
         _warpMouse = @true;
     } else {
         _warpMouse = @false;
     }
-    return; }
+    return;
+}
 
 @end
 
@@ -631,11 +616,11 @@ int main(int argc, const char * argv[]) {
         
         [config validateParameters];
         
-        delayCount  = [config toInt  : _delay];
-        warpX       = [config toFloat: _warpX];
-        warpY       = [config toFloat: _warpY];
-        warpMouse   = [config toInt  : _warpMouse];
-        cursorScale = [config toFloat: _scale];
+        delayCount  = [_delay intValue];
+        warpX       = [_warpX floatValue];
+        warpY       = [_warpY floatValue];
+        cursorScale = [_scale floatValue];
+        warpMouse   = [_warpMouse intValue];
 
         printf("\nStarted with %d ms delay%s", delayCount*POLLING_MS, warpMouse ? ", " : "\n");
         if (warpMouse) { printf("warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale); }

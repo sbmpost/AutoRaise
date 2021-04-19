@@ -342,8 +342,8 @@ NSArray   *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
 @interface ConfigClass:NSObject
 - (NSString *) getFilePath: (NSString *) filename;
 - (BOOL) fileExist: (NSString *) filename;
-- (void) readCommandLineConfig;
-- (bool) readOriginalConfig;
+- (void) readCommandLineConfig: (int) argc;
+- (void) readOriginalConfig;
 - (void) readHiddenConfig;
 - (void) validateParameters;
 @end
@@ -361,23 +361,27 @@ NSArray   *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
     return [[NSFileManager defaultManager] fileExistsAtPath: filename];
 }
 
-- (void) readCommandLineConfig {
-    // read NSArgumentDomain
-    NSUserDefaults *arguments = [NSUserDefaults standardUserDefaults];
+- (void) readCommandLineConfig: (int) argc {
+    if (argc > 1) {
+        // read NSArgumentDomain
+        NSUserDefaults *arguments = [NSUserDefaults standardUserDefaults];
 
-    for (id key in parametersDictionary) {
-        id arg = [arguments objectForKey: key];
-        if (arg != NULL) { parameters[key] = arg; }
+        for (id key in parametersDictionary) {
+            id arg = [arguments objectForKey: key];
+            if (arg != NULL) { parameters[key] = arg; }
+        }
+    } else {
+        [self readOriginalConfig];
     }
     return;
 }
 
-- (bool) readOriginalConfig {
+- (void) readOriginalConfig {
     // original config files:
     NSString *delayFile = @"AutoRaise.delay";
     NSString *warpFile  = @"AutoRaise.warp";
     
-    if ([self fileExist: delayFile]) {
+    if ([self fileExist: delayFile] or [self fileExist: warpFile]) {
         NSFileHandle *hDelayFile = [NSFileHandle fileHandleForReadingAtPath: [self getFilePath: delayFile]];
         if (hDelayFile) {
             parameters[@"delay"]= @(abs([[[NSString alloc] initWithData:
@@ -385,9 +389,7 @@ NSArray   *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
                                            NSUTF8StringEncoding] intValue]));
             [hDelayFile closeFile];
         }
-    }
-        
-    if ([self fileExist: warpFile]) {
+
         NSFileHandle *hWarpFile = [NSFileHandle fileHandleForReadingAtPath: [self getFilePath: warpFile]];
         if (hWarpFile) {
             NSString *line = [[NSString alloc] initWithData:
@@ -399,20 +401,18 @@ NSArray   *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
             if (components.count >= 3) { parameters[@"scale"] = @([[components objectAtIndex:2] floatValue]); }
             [hWarpFile closeFile];
         }
+    } else {
+        [self readHiddenConfig];
     }
-
-    // return true if any of original config files has been found
-    return ([self fileExist: delayFile] or [self fileExist: warpFile]);
+    return;
 }
 
-- (void)  readHiddenConfig {
+- (void) readHiddenConfig {
     // search for dotfiles
     NSString *hiddenConfigFile = @"";
-    if ([self fileExist: @".AutoRaise"]) {
-        hiddenConfigFile = @".AutoRaise";
-    } else {
+    if ([self fileExist: @".AutoRaise"]) { hiddenConfigFile = @".AutoRaise";
+    } else
         if ([self fileExist: @".config/AutoRaise/config"]) { hiddenConfigFile = @".config/AutoRaise/config"; }
-    }
     
     if (not [hiddenConfigFile isEqual: @""]) {
         NSError  *error;
@@ -604,15 +604,7 @@ int main(int argc, const char * argv[]) {
         printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5> -scale <2.0>]", VERSION, POLLING_MS);
         
         ConfigClass * config = [[ConfigClass alloc]init];
-        
-        if (argc > 1) {                             // if there are any arguments, we would use only them
-            [config readCommandLineConfig];
-        } else {                                    // otherwise try to read
-            if (not [config readOriginalConfig]) {  // original config files
-                [config readHiddenConfig];          // and failback to hidden config files
-            }
-        }
-        
+        [config readCommandLineConfig: argc];
         [config validateParameters];
         
         delayCount  = [parameters[@"delay"] intValue];

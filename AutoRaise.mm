@@ -342,7 +342,7 @@ NSArray   *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
 @interface ConfigClass:NSObject
 - (NSString *) getFilePath: (NSString *) filename;
 - (BOOL) fileExist: (NSString *) filename;
-- (void) readCommandLineConfig: (int) argc;
+- (void) readConfig: (int) argc;
 - (void) readOriginalConfig;
 - (void) readHiddenConfig;
 - (void) validateParameters;
@@ -352,7 +352,7 @@ NSArray   *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
 
 - (NSString *) getFilePath: (NSString *) filename {
     filename = [NSString stringWithFormat: @"%@/%@", NSHomeDirectory(), filename];
-    if (not [[NSFileManager defaultManager] fileExistsAtPath: filename]) { filename = @""; }
+    if (not [[NSFileManager defaultManager] fileExistsAtPath: filename]) { filename = NULL; }
     return filename;
 }
 
@@ -361,7 +361,7 @@ NSArray   *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
     return [[NSFileManager defaultManager] fileExistsAtPath: filename];
 }
 
-- (void) readCommandLineConfig: (int) argc {
+- (void) readConfig: (int) argc {
     if (argc > 1) {
         // read NSArgumentDomain
         NSUserDefaults *arguments = [NSUserDefaults standardUserDefaults];
@@ -411,8 +411,7 @@ NSArray   *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
     // search for dotfiles
     NSString *hiddenConfigFile = @"";
     if ([self fileExist: @".AutoRaise"]) { hiddenConfigFile = @".AutoRaise";
-    } else
-        if ([self fileExist: @".config/AutoRaise/config"]) { hiddenConfigFile = @".config/AutoRaise/config"; }
+    } else if ([self fileExist: @".config/AutoRaise/config"]) { hiddenConfigFile = @".config/AutoRaise/config"; }
     
     if (not [hiddenConfigFile isEqual: @""]) {
         NSError  *error;
@@ -604,7 +603,7 @@ int main(int argc, const char * argv[]) {
         printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5> -scale <2.0>]", VERSION, POLLING_MS);
         
         ConfigClass * config = [[ConfigClass alloc]init];
-        [config readCommandLineConfig: argc];
+        [config readConfig: argc];
         [config validateParameters];
         
         delayCount  = [parameters[@"delay"] intValue];

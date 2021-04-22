@@ -30,7 +30,7 @@ file. In order to pass the parameters from the example above by means of these c
 
 Update (2021-04-22): 
 In addition to the configuration files mentioned above, AutoRaise now supports hidden configuration files in these locations:
-**~/.AutoRaise** or **~/.config/AutoRaise/config**. The format of these files is as follows:
+**~/.AutoRaise** or **~/.config/AutoRaise/config**. The file format is as follows:
 
     #AutoRaise config file
     delay=1 

@@ -334,6 +334,127 @@ const void CppClass::spaceChanged(NSNotification * notification) {
     oldPoint.x = oldPoint.y = 0;
 }
 
+//----------------------------------------------configuration-----------------------------------------------
+
+NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
+NSArray   *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
+
+@interface ConfigClass:NSObject
+- (NSString *) getFilePath: (NSString *) filename;
+- (BOOL) fileExist: (NSString *) filename;
+- (void) readConfig: (int) argc;
+- (void) readOriginalConfig;
+- (void) readHiddenConfig;
+- (void) validateParameters;
+@end
+
+@implementation ConfigClass
+
+- (NSString *) getFilePath: (NSString *) filename {
+    filename = [NSString stringWithFormat: @"%@/%@", NSHomeDirectory(), filename];
+    if (not [[NSFileManager defaultManager] fileExistsAtPath: filename]) { filename = NULL; }
+    return filename;
+}
+
+- (BOOL) fileExist: (NSString *) filename {
+    return (not [[self getFilePath: filename] isEqual: NULL] );
+}
+
+- (void) readConfig: (int) argc {
+    if (argc > 1) {
+        // read NSArgumentDomain
+        NSUserDefaults *arguments = [NSUserDefaults standardUserDefaults];
+
+        for (id key in parametersDictionary) {
+            id arg = [arguments objectForKey: key];
+            if (arg != NULL) { parameters[key] = arg; }
+        }
+    } else {
+        [self readOriginalConfig];
+    }
+    return;
+}
+
+- (void) readOriginalConfig {
+    // original config files:
+    NSString *delayFile = @"AutoRaise.delay";
+    NSString *warpFile  = @"AutoRaise.warp";
+    
+    if ([self fileExist: delayFile] or [self fileExist: warpFile]) {
+        NSFileHandle *hDelayFile = [NSFileHandle fileHandleForReadingAtPath: [self getFilePath: delayFile]];
+        if (hDelayFile) {
+            parameters[@"delay"]= @(abs([[[NSString alloc] initWithData:
+                                           [hDelayFile readDataOfLength: 2] encoding:
+                                           NSUTF8StringEncoding] intValue]));
+            [hDelayFile closeFile];
+        }
+
+        NSFileHandle *hWarpFile = [NSFileHandle fileHandleForReadingAtPath: [self getFilePath: warpFile]];
+        if (hWarpFile) {
+            NSString *line = [[NSString alloc] initWithData:
+                [hWarpFile readDataOfLength:11] encoding:
+                NSUTF8StringEncoding];
+            NSArray *components = [line componentsSeparatedByString: @" "];
+            if (components.count >= 1) { parameters[@"warpX"] = @([[components objectAtIndex:0] floatValue]); }
+            if (components.count >= 2) { parameters[@"warpY"] = @([[components objectAtIndex:1] floatValue]); }
+            if (components.count >= 3) { parameters[@"scale"] = @([[components objectAtIndex:2] floatValue]); }
+            [hWarpFile closeFile];
+        }
+    } else {
+        [self readHiddenConfig];
+    }
+    return;
+}
+
+- (void) readHiddenConfig {
+    // search for dotfiles
+    NSString *hiddenConfigFile = @"";
+    if ([self fileExist: @".AutoRaise"]) { hiddenConfigFile = @".AutoRaise";
+    } else if ([self fileExist: @".config/AutoRaise/config"]) { hiddenConfigFile = @".config/AutoRaise/config"; }
+    
+    if (not [hiddenConfigFile isEqual: @""]) {
+        NSError  *error;
+        NSString *hiddenConfigFileContent = [[NSString alloc]
+                                             initWithContentsOfFile: [self getFilePath: hiddenConfigFile]
+                                             encoding: NSUTF8StringEncoding
+                                             error: &error];
+        
+        while ([hiddenConfigFileContent containsString:@" " ]) {
+            // remove all whitespacecs from file
+            hiddenConfigFileContent = [hiddenConfigFileContent stringByReplacingOccurrencesOfString:@" " withString:@""];
+        }
+        
+        NSArray *hiddenConfigFileLines = [hiddenConfigFileContent componentsSeparatedByString:@"\n"];
+        NSArray *components;
+        for (NSString *line in hiddenConfigFileLines) {
+            if (not [line hasPrefix:@"#"]) {
+                components = [line componentsSeparatedByString:@"="];
+                if ([components count] == 2) {
+                    for (id key in parametersDictionary) {
+                        if ([components[0] isEqual: key]) { parameters[key] = components[1]; }
+                    }
+                }
+            }
+        }
+    }
+    return;
+}
+
+- (void) validateParameters {
+    // validating and fixing wrong/absent parameters
+    if ([parameters[@"delay"] intValue]   < 1) { parameters[@"delay"] = @"2"; }
+    if ([parameters[@"scale"] floatValue] < 1) { parameters[@"scale"] = @"1.0"; }
+    if ((parameters[@"warpX"] != NULL) and [parameters[@"warpX"] floatValue] >= 0 and [parameters[@"warpX"] floatValue] <= 1 &&
+        (parameters[@"warpY"] != NULL) and [parameters[@"warpY"] floatValue] >= 0 and [parameters[@"warpY"] floatValue] <= 1) {
+        parameters[@"warpMouse"] = @true;
+    } else {
+        parameters[@"warpMouse"] = @false;
+    }
+    return;
+}
+
+@end
+
 //------------------------------------------where it all happens--------------------------------------------
 
 #define SCALEDELAY_MS 300
@@ -475,48 +596,22 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 }
 
 #define POLLING_MS 20
+#define VERSION "1.8"
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
-        if (argc >= 3) {
-            NSUserDefaults * standardDefaults = [NSUserDefaults standardUserDefaults];
-            delayCount = abs((int) [standardDefaults integerForKey: @"delay"]);
-            warpMouse = argc != 3 ;
-            if (argc >= 7) {
-                warpX = [standardDefaults floatForKey: @"warpX"];
-                warpY = [standardDefaults floatForKey: @"warpY"];
-                if (argc >= 8) {
-                    cursorScale = [standardDefaults floatForKey: @"scale"];
-                }
-            }
-        } else {
-            NSString * home = NSHomeDirectory();
-            NSFileHandle * delayFile = [NSFileHandle fileHandleForReadingAtPath:
-                [NSString stringWithFormat: @"%@/AutoRaise.delay", home]];
-            if (delayFile) {
-                delayCount = abs([[[NSString alloc] initWithData:
-                    [delayFile readDataOfLength: 2] encoding:
-                    NSUTF8StringEncoding] intValue]);
-                [delayFile closeFile];
-            }
-            NSFileHandle * warpFile = [NSFileHandle fileHandleForReadingAtPath:
-                [NSString stringWithFormat: @"%@/AutoRaise.warp", home]];
-            if (warpFile) {
-                warpMouse = true;
-                NSString * line = [[NSString alloc] initWithData:
-                    [warpFile readDataOfLength:11] encoding:
-                    NSUTF8StringEncoding];
-                NSArray * components = [line componentsSeparatedByString: @" "];
-                if (components.count >= 1) { warpX = [[components objectAtIndex:0] floatValue]; }
-                if (components.count >= 2) { warpY = [[components objectAtIndex:1] floatValue]; }
-                if (components.count >= 3) { cursorScale = [[components objectAtIndex:2] floatValue]; }
-                [warpFile closeFile];
-            }
-        }
-        if (!delayCount) { delayCount = 2; }
-        if (!cursorScale) { cursorScale = 2; }
+        printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5> -scale <2.0>]", VERSION, POLLING_MS);
+        
+        ConfigClass * config = [[ConfigClass alloc]init];
+        [config readConfig: argc];
+        [config validateParameters];
+        
+        delayCount  = [parameters[@"delay"] intValue];
+        warpX       = [parameters[@"warpX"] floatValue];
+        warpY       = [parameters[@"warpY"] floatValue];
+        cursorScale = [parameters[@"scale"] floatValue];
+        warpMouse   = [parameters[@"warpMouse"] intValue];
 
-        printf("\nBy sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5> -scale <2.5>]"
-               "\nv1.8 started with %d ms delay%s", POLLING_MS, delayCount*POLLING_MS, warpMouse ? ", " : "\n");
+        printf("\nStarted with %d ms delay%s", delayCount*POLLING_MS, warpMouse ? ", " : "\n");
         if (warpMouse) { printf("warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale); }
 
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};

@@ -348,7 +348,7 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 - (void) readConfig:(int) argc;
 - (void) readOriginalConfig;
 - (void) readHiddenConfig;
-- (bool) validateParameters;
+- (void) validateParameters;
 @end
 
 @implementation ConfigClass
@@ -434,15 +434,13 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
     return;
 }
 
-- (bool) validateParameters {
+- (void) validateParameters {
     // validate and fix wrong/absent parameters
     if ([parameters[kDelay] intValue] < 1) { parameters[kDelay] = @"2"; }
-    if ([parameters[kScale] floatValue] < 1) { parameters[kScale] = @"1.0"; }
-    if (parameters[kWarpX] && [parameters[kWarpX] floatValue] >= 0 && [parameters[kWarpX] floatValue] <= 1 &&
-        parameters[kWarpY] && [parameters[kWarpY] floatValue] >= 0 && [parameters[kWarpY] floatValue] <= 1) {
-        return true;
-    }
-    return false;
+    if ([parameters[kScale] floatValue] < 1) { parameters[kScale] = @"2.0"; }
+    warpMouse = parameters[kWarpX] && [parameters[kWarpX] floatValue] >= 0 && [parameters[kWarpX] floatValue] <= 1 &&
+        parameters[kWarpY] && [parameters[kWarpY] floatValue] >= 0 && [parameters[kWarpY] floatValue] <= 1;
+    return;
 }
 
 @end
@@ -595,7 +593,7 @@ int main(int argc, const char * argv[]) {
         
         ConfigClass * config = [[ConfigClass alloc] init];
         [config readConfig: argc];
-        bool warpMouse = [config validateParameters];
+        [config validateParameters];
 
         delayCount  = [parameters[@"delay"] intValue];
         warpX       = [parameters[@"warpX"] floatValue];

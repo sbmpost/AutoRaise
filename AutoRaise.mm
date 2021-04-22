@@ -595,13 +595,12 @@ int main(int argc, const char * argv[]) {
         
         ConfigClass * config = [[ConfigClass alloc] init];
         [config readConfig: argc];
-
         bool warpMouse = [config validateParameters];
+
         delayCount  = [parameters[@"delay"] intValue];
         warpX       = [parameters[@"warpX"] floatValue];
         warpY       = [parameters[@"warpY"] floatValue];
         cursorScale = [parameters[@"scale"] floatValue];
-//        warpMouse   = [parameters[@"warpMouse"] intValue];
 
         printf("\nStarted with %d ms delay%s", delayCount*POLLING_MS, warpMouse ? ", " : "\n");
         if (warpMouse) { printf("warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale); }

@@ -412,15 +412,15 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
     
     if (hiddenConfigFilePath) {
         NSError *error;
-        NSString *hiddenConfigContent = [[NSString alloc]
+        NSString *configContent = [[NSString alloc]
             initWithContentsOfFile: hiddenConfigFilePath
             encoding: NSUTF8StringEncoding error: &error];
         
         // remove all whitespaces from file
-        hiddenConfigContent = [hiddenConfigContent stringByReplacingOccurrencesOfString:@" " withString:@""];
-        NSArray *hiddenConfigLines = [hiddenConfigContent componentsSeparatedByString:@"\n"];
+        configContent = [configContent stringByReplacingOccurrencesOfString:@" " withString:@""];
+        NSArray *configLines = [configContent componentsSeparatedByString:@"\n"];
         NSArray *components;
-        for (NSString *line in hiddenConfigLines) {
+        for (NSString *line in configLines) {
             if (not [line hasPrefix:@"#"]) {
                 components = [line componentsSeparatedByString:@"="];
                 if ([components count] == 2) {
@@ -438,7 +438,8 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
     // validate and fix wrong/absent parameters
     if ([parameters[kDelay] intValue] < 1) { parameters[kDelay] = @"2"; }
     if ([parameters[kScale] floatValue] < 1) { parameters[kScale] = @"2.0"; }
-    warpMouse = parameters[kWarpX] && [parameters[kWarpX] floatValue] >= 0 && [parameters[kWarpX] floatValue] <= 1 &&
+    warpMouse =
+        parameters[kWarpX] && [parameters[kWarpX] floatValue] >= 0 && [parameters[kWarpX] floatValue] <= 1 &&
         parameters[kWarpY] && [parameters[kWarpY] floatValue] >= 0 && [parameters[kWarpY] floatValue] <= 1;
     return;
 }

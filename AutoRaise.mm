@@ -352,12 +352,12 @@ NSArray   *parametersDictionary = @[@"delay", @"warpX", @"warpY", @"scale"];
 
 - (NSString *) getFilePath: (NSString *) filename {
     filename = [NSString stringWithFormat: @"%@/%@", NSHomeDirectory(), filename];
-    if (not [[NSFileManager defaultManager] fileExistsAtPath: filename]) { filename = NULL; }
+    if (not [[NSFileManager defaultManager] fileExistsAtPath: filename]) { filename = @""; }
     return filename;
 }
 
 - (BOOL) fileExist: (NSString *) filename {
-    return (not [[self getFilePath: filename] isEqual: NULL] );
+    return (not [[self getFilePath: filename] isEqual: @""] );
 }
 
 - (void) readConfig: (int) argc {

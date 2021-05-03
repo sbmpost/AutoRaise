@@ -41,7 +41,7 @@ In addition to the configuration files mentioned above, AutoRaise now supports h
 AutoRaise.app usage:
 
     a) setup configuration files, see above ^
-    b) cp -r AutoRaise.app /Applications/
+    b) run: make install
     c) open /Applications/AutoRaise.app (allow Accessibility if asked for)
     d) either stop AutoRaise via "Activity Monitor" or read on:
 

@@ -1,16 +1,17 @@
+.PHONY: all clean install
+
 all: AutoRaise AutoRaise.app
 
 clean:
 	rm -f AutoRaise
+	rm -rf AutoRaise.app
 
-# Workaround for AutoRaise binary being included in the repo itself
-.PHONY: AutoRaise
-AutoRaise: AutoRaise.out
-	cp $^ $@
+install: AutoRaise.app
+	rm -rf /Applications/AutoRaise.app
+	cp -r AutoRaise.app /Applications/
 
-AutoRaise.out: AutoRaise.mm
+AutoRaise: AutoRaise.mm
 	g++ -O2 -Wall -fobjc-arc -o $@ $^ -framework AppKit
 
-AutoRaise.app: AutoRaise.out Info.plist AutoRaise.icns
-	cp AutoRaise.out AutoRaise
+AutoRaise.app: AutoRaise Info.plist AutoRaise.icns
 	./create-app-bundle.sh

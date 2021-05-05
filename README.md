@@ -3,7 +3,7 @@ option to warp the mouse to the center of the activated window when using the cm
 https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x
 
 To use AutoRaise, you can download the master branch from [here](https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip)
-and use the commands below to compile the binaries:
+and use the following commands to compile the binaries:
 
     unzip -d ~ ~/Downloads/AutoRaise-master.zip
     cd ~/AutoRaise-master && make clean && make

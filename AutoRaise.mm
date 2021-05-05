@@ -587,7 +587,7 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 }
 
 #define POLLING_MS 20
-#define VERSION "2.0"
+#define VERSION "2.1"
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5> -scale <2.0>]", VERSION, POLLING_MS);

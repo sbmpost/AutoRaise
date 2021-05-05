@@ -75,6 +75,6 @@ in the System Preferences|Security & Privacy|Privacy|Accessibility pane.
 
 https://github.com/Dimentium/homebrew-autoraise
 
-*Note3*: Lothar Haeger created a gui on top of the commandline version which can be found here:
+*Note3*: Lothar Haeger created a gui on top of the command line version which can be found here:
 
 https://github.com/lhaeger/AutoRaise

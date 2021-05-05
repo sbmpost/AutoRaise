@@ -1,7 +1,10 @@
 When you hover a window it will be raised to the front (with a delay of your choosing) and gets the focus. There is also an
-option to warp the mouse to the center of the activated window when using the cmd-tab key combination. To use AutoRaise, you
-can download the master branch from [here](https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip) and use these
-commands to compile the binaries:
+option to warp the mouse to the center of the activated window when using the cmd-tab key combination. See also
+
+https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x
+
+To use AutoRaise, you can download the master branch from [here](https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip)
+and use these commands to compile the binaries:
 
     unzip -d ~ ~/Downloads/AutoRaise-master.zip
     cd ~/AutoRaise-master && make clean && make
@@ -11,9 +14,10 @@ This will give you two files:
     AutoRaise
     AutoRaise.app
 
-AutoRaise can be used directly from the command line in which case it accepts command line parameters. AutoRaise.app can be used
-without a terminal window and therefore relies on the presence of two configuration files. Another difference is that AutoRaise.app
-runs on the background and can only be stopped via "Activity Monitor" or the AppleScript provided at the bottom of this README.
+AutoRaise can be used directly from the command line in which case it accepts command line parameters. And the other binary,
+AutoRaise.app, can be used without a terminal window and therefore relies on the presence of two configuration files. Another
+difference is that AutoRaise.app runs on the background and can only be stopped via "Activity Monitor" or the AppleScript
+provided at the bottom of this README.
 
 Command line usage:
 
@@ -29,19 +33,19 @@ file. In order to pass the parameters from the example above by means of these c
     echo "0.5 0.1 2.5" > ~/AutoRaise.warp
 
 Update (2021-04-22):
-In addition to the configuration files mentioned above, AutoRaise now supports hidden configuration files in these locations:
+In addition to the configuration files mentioned above, AutoRaise now supports a hidden configuration file in these locations:
 **~/.AutoRaise** or **~/.config/AutoRaise/config**. The file format is as follows:
 
     #AutoRaise config file
     delay=1 
     warpX=0.5
-    warpY=0.3
-    scale=8
+    warpY=0.1
+    scale=2.5
 
 AutoRaise.app usage:
 
-    a) setup configuration files, see above ^
-    b) run: make install
+    a) setup configuration file(s), see above ^
+    b) in the AutoRaise source folder run: make install
     c) open /Applications/AutoRaise.app (allow Accessibility if asked for)
     d) either stop AutoRaise via "Activity Monitor" or read on:
 
@@ -64,8 +68,14 @@ Applescript:
         return input
     end run
 
-*Note*: When upgrading from a previous AutoRaise version, it is a good idea to check if you are not running two instances
-at the same time (the older and the new version). This can always be checked with "Activity Monitor". It may also be
-necessary to toggle off and on access for AutoRaise in the System Preferences|Security & Privacy|Privacy|Accessibility pane. 
+*Note1*: When upgrading from a previous AutoRaise version, use "Activity Monitor" to check you are not running two instances
+at the same time (the older and the new version). It may also be necessary to toggle *off* and *on* access for AutoRaise in
+the System Preferences|Security & Privacy|Privacy|Accessibility pane. 
 
-See also https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x
+*Note2*: Dimentium created a homebrew formula for this tool which can be found here:
+
+    https://github.com/Dimentium/homebrew-autoraise
+
+*Note3*: Lothar Haeger created a gui on top of the commandline version which can be found here:
+
+    https://github.com/lhaeger/AutoRaise

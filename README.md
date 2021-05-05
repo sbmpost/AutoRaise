@@ -18,7 +18,7 @@ AutoRaise.app, can be used without a terminal window and relies on the presence 
 AutoRaise.app runs on the background and can only be stopped via "Activity Monitor" or the AppleScript provided at the bottom
 of this README.
 
-Command line usage:
+**Command line usage:**
 
     ./AutoRaise -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5
 
@@ -41,7 +41,7 @@ In addition to the configuration files mentioned above, AutoRaise now supports a
     warpY=0.1
     scale=2.5
 
-AutoRaise.app usage:
+**AutoRaise.app usage:**
 
     a) setup configuration file(s), see above ^
     b) in the AutoRaise source folder run: make install
@@ -68,13 +68,13 @@ Applescript:
     end run
 
 *Note1*: When upgrading from a previous AutoRaise version, use "Activity Monitor" to check you are not running two instances
-at the same time (the older and the new version). It may also be necessary to toggle *off* and *on* access for AutoRaise in
-the System Preferences|Security & Privacy|Privacy|Accessibility pane. 
+at the same time (the older and the new version). It may also be necessary to toggle **off** and **on** access for AutoRaise
+in the System Preferences|Security & Privacy|Privacy|Accessibility pane. 
 
 *Note2*: Dimentium created a homebrew formula for this tool which can be found here:
 
-    https://github.com/Dimentium/homebrew-autoraise
+https://github.com/Dimentium/homebrew-autoraise
 
 *Note3*: Lothar Haeger created a gui on top of the commandline version which can be found here:
 
-    https://github.com/lhaeger/AutoRaise
+https://github.com/lhaeger/AutoRaise

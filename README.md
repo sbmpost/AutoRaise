@@ -2,7 +2,7 @@ When you hover a window it will be raised to the front (with a delay of your cho
 option to warp the mouse to the center of the activated window when using the cmd-tab key combination. See also
 https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x
 
-To use AutoRaise, you can download the master branch from [here](https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip)
+To use AutoRaise, download the master branch from [here](https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip)
 and use the following commands to compile the binaries:
 
     unzip -d ~ ~/Downloads/AutoRaise-master.zip
@@ -14,9 +14,9 @@ This will give you two files:
     AutoRaise.app
 
 AutoRaise can be used directly from the command line in which case it accepts command line parameters. The other binary,
-AutoRaise.app, can be used without a terminal window and relies on the presence of two configuration files. Another
-difference is that AutoRaise.app runs on the background and can only be stopped via "Activity Monitor" or the AppleScript
-provided at the bottom of this README.
+AutoRaise.app, can be used without a terminal window and relies on the presence of two configuration files. Note also that
+AutoRaise.app runs on the background and can only be stopped via "Activity Monitor" or the AppleScript provided at the bottom
+of this README.
 
 Command line usage:
 

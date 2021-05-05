@@ -32,8 +32,8 @@ In order to pass the parameters from the example above by means of these configu
     echo "0.5 0.1 2.5" > ~/AutoRaise.warp
 
 Update (2021-04-22):
-In addition to the configuration files mentioned above, AutoRaise now supports a hidden configuration file in these locations:
-**~/.AutoRaise** or **~/.config/AutoRaise/config**. The file format is as follows:
+In addition to the configuration files mentioned above, AutoRaise now supports a hidden configuration file in one of these locations:
+**~/.AutoRaise** or **~/.config/AutoRaise/config**. The format is as follows:
 
     #AutoRaise config file
     delay=1 

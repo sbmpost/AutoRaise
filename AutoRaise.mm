@@ -42,6 +42,7 @@ static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
 static bool appWasActivated = false;
 static bool warpMouse = false;
+static bool verbose = false;
 static float warpX = 0.5;
 static float warpY = 0.5;
 static int raiseTimes = 0;
@@ -51,6 +52,7 @@ static int delayCount = 0;
 //---------------------------------------------helper methods-----------------------------------------------
 
 void activate(pid_t pid) {
+    if (verbose) { NSLog(@"Activate"); }
     // [[NSRunningApplication runningApplicationWithProcessIdentifier: pid]
     //   activateWithOptions: NSApplicationActivateIgnoringOtherApps];
     // Temporary solution as NSRunningApplication does not work properly on OSX 11.1
@@ -85,6 +87,7 @@ NSDictionary * topwindow(CGPoint point) {
 }
 
 AXUIElementRef fallback(CGPoint point) {
+    if (verbose) { NSLog(@"Fallback"); }
     AXUIElementRef _window = NULL;
     NSDictionary * top_window = topwindow(point);
     if (top_window) {
@@ -124,6 +127,7 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
     if (_element) {
         CFStringRef _element_role = NULL;
         AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
+        bool check_attributes = !_element_role;
         if (_element_role) {
             if (CFEqual(_element_role, kAXDockItemRole) ||
                 CFEqual(_element_role, kAXMenuItemRole)) {
@@ -158,18 +162,20 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
                 CFRelease(_element_role);
                 CFRelease(_element);
             } else {
-                AXUIElementRef _window = NULL;
-                AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *) &_window);
-                if (!_window) {
-                    AXUIElementCopyAttributeValue(_element, kAXParentAttribute, (CFTypeRef *) &_window);
-                    _window = get_raiseable_window(_window, point);
-                }
                 CFRelease(_element_role);
-                CFRelease(_element);
-                return _window;
+                check_attributes = true;
             }
-        } else {
+        }
+
+        if (check_attributes) {
+            AXUIElementRef _window = NULL;
+            AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *) &_window);
+            if (!_window) {
+                AXUIElementCopyAttributeValue(_element, kAXParentAttribute, (CFTypeRef *) &_window);
+                _window = get_raiseable_window(_window, point);
+            }
             CFRelease(_element);
+            return _window;
         }
     } else {
         return fallback(point);
@@ -181,7 +187,9 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
 AXUIElementRef get_mousewindow(CGPoint point) {
     AXUIElementRef _element = NULL;
     AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
-    return get_raiseable_window(_element, point);
+    AXUIElementRef _window = get_raiseable_window(_element, point);
+    if (verbose && !_window) { NSLog(@"No raisable window"); }
+    return _window;
 }
 
 CGPoint get_mousepoint(AXUIElementRef _window) {
@@ -285,6 +293,7 @@ public:
                 selector: @selector(appActivated:)
                 name: NSWorkspaceDidActivateApplicationNotification
                 object: nil];
+            if (verbose) { NSLog(@"Registered app activated selector"); }
         }
     }
     return self;
@@ -293,9 +302,11 @@ public:
     [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver: self];
 }
 - (void)spaceChanged:(NSNotification *)notification {
+    if (verbose) { NSLog(@"Space changed"); }
     cppClass->spaceChanged(notification);
 }
 - (void)appActivated:(NSNotification *)notification {
+    if (verbose) { NSLog(@"App activated"); }
     cppClass->appActivated(notification);
 }
 - (void)scheduleScale:(NSNumber *)scale :(NSNumber *)scaleDelay {
@@ -307,6 +318,7 @@ public:
         afterDelay: scaleDelay.floatValue*3];
 }
 - (void)onSetCursorScale:(NSNumber *)scale {
+    if (verbose) { NSLog(@"Set cursor scale: %@", scale); }
     CGSSetCursorScale(CGSMainConnectionID(), scale.floatValue);
 }
 - (void)onTick:(NSNumber *)timerInterval {
@@ -340,7 +352,8 @@ const NSString *kDelay = @"delay";
 const NSString *kWarpX = @"warpX";
 const NSString *kWarpY = @"warpY";
 const NSString *kScale = @"scale";
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale];
+const NSString *kVerbose = @"verbose";
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose];
 NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
 @interface ConfigClass:NSObject
@@ -465,11 +478,13 @@ const void CppClass::appActivated(NSNotification * notification) {
     CFRelease(_focusedApp);
 
     if (_focusedWindow) {
+        if (verbose) { NSLog(@"Warp mouse"); }
         CGWarpMouseCursorPosition(get_mousepoint((AXUIElementRef) _focusedWindow));
         CFRelease(_focusedWindow);
     }
 
     if (cursorScale != oldScale) {
+        if (verbose) { NSLog(@"Schedule cursor scale"); }
         scheduleScale(cursorScale, SCALEDELAY_MS/1000.0);
     }
 }
@@ -587,36 +602,41 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 }
 
 #define POLLING_MS 20
-#define VERSION "2.1"
+#define VERSION "2.2"
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
-        printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5> -scale <2.0>]", VERSION, POLLING_MS);
+        printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]", VERSION, POLLING_MS);
         
         ConfigClass * config = [[ConfigClass alloc] init];
         [config readConfig: argc];
         [config validateParameters];
 
-        delayCount  = [parameters[@"delay"] intValue];
-        warpX       = [parameters[@"warpX"] floatValue];
-        warpY       = [parameters[@"warpY"] floatValue];
-        cursorScale = [parameters[@"scale"] floatValue];
+        delayCount  = [parameters[kDelay] intValue];
+        warpX       = [parameters[kWarpX] floatValue];
+        warpY       = [parameters[kWarpY] floatValue];
+        cursorScale = [parameters[kScale] floatValue];
+        verbose     = [parameters[kVerbose] boolValue];
 
         printf("\nStarted with %d ms delay%s", delayCount*POLLING_MS, warpMouse ? ", " : "\n");
         if (warpMouse) { printf("warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale); }
 
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
-        AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);
+        bool trusted = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);
+        if (verbose) { NSLog(@"AXIsProcessTrusted: %s", trusted ? "YES" : "NO"); }
 
         CGSGetCursorScale(CGSMainConnectionID(), &oldScale);
         CFMachPortRef eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, 0,
             (1 << kCGEventKeyUp) | (1 << kCGEventFlagsChanged), eventTapHandler, NULL);
+
+        CFRunLoopSourceRef runLoopSource = NULL;
         if (eventTap) {
-            CFRunLoopSourceRef runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0);
+            runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0);
             if (runLoopSource) {
                 CFRunLoopAddSource(CFRunLoopGetCurrent(), runLoopSource, kCFRunLoopCommonModes);
                 CGEventTapEnable(eventTap, true);
             }
         }
+        if (verbose) { NSLog(@"Got run loop source: %s", runLoopSource ? "YES" : "NO"); }
 
         CppClass cppClass = CppClass();
         cppClass.startTimer(POLLING_MS/1000.0);

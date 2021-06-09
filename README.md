@@ -24,16 +24,9 @@ of this README.
 
 The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. In addition to warping the mouse,
 the scale parameter allows you to specify the mouse cursor size. To disable this feature, simply set it to the system configured
-scale (normally 1.0). If no parameters have been specified, AutoRaise first looks for an AutoRaise.delay file in the **home**
-folder and defaults to 40ms delay if it can't find one. Likewise, it will check for the existence of an AutoRaise.warp file.
-In order to pass the parameters from the example above by means of these configuration files, run these commands once:
-
-    echo 1 > ~/AutoRaise.delay
-    echo "0.5 0.1 2.5" > ~/AutoRaise.warp
-
-Update (2021-04-22):
-In addition to the configuration files mentioned above, AutoRaise now supports a hidden configuration file in one of these locations:
-**~/.AutoRaise** or **~/.config/AutoRaise/config**. The format is as follows:
+scale (normally 1.0). If no parameters have been specified, AutoRaise defaults to 40ms delay. To pass the parameters by means of a
+configuration file, create a hidden file in one of these locations: **~/.AutoRaise** or **~/.config/AutoRaise/config**. The file
+format is as follows:
 
     #AutoRaise config file
     delay=1 
@@ -43,7 +36,7 @@ In addition to the configuration files mentioned above, AutoRaise now supports a
 
 **AutoRaise.app usage:**
 
-    a) setup configuration file(s), see above ^
+    a) setup configuration file, see above ^
     b) in the AutoRaise source folder run: make install
     c) open /Applications/AutoRaise.app (allow Accessibility if asked for)
     d) either stop AutoRaise via "Activity Monitor" or read on:
@@ -67,14 +60,38 @@ Applescript:
         return input
     end run
 
-*Note1*: When upgrading from a previous AutoRaise version, use "Activity Monitor" to check you are not running two instances
-at the same time (the older and the new version). It may also be necessary to toggle **off** and **on** access for AutoRaise
-in the System Preferences|Security & Privacy|Privacy|Accessibility pane. 
+**Troubleshooting & Verbose logging**
 
-*Note2*: Dimentium created a homebrew formula for this tool which can be found here:
+If you experience any issues, it is advisable to first check these things:
+
+- Are you using the latest version?
+- Does it work with the command line version?
+- Are you running other mouse tools that might intervene with AutoRaise?
+- Are you running two AutoRaise instances at the same time? Use "Activity Monitor" to check this.
+- Is Accessibility properly enabled? To be absolutely sure, toggle **off** and **on** access
+for AutoRaise in the System Preferences|Security & Privacy|Privacy|Accessibility pane.
+
+If after checking the above you still experience the problem, I encourage you to create an issue
+in github. It will be helpful to provide (a small part of) the verbose log, which can be enabled
+like so:
+
+    ./AutoRaise -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -verbose true
+
+The output should look something like this:
+
+    v2.2 by sbmpost(c) 2021, usage:
+    AutoRaise -delay <1=20ms> [-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]
+    Started with 20 ms delay, warpX: 0.5, warpY: 0.1, scale: 2.5
+    2021-06-10 12:13:45.925 AutoRaise[2920:92006] AXIsProcessTrusted: YES
+    2021-06-10 12:13:45.938 AutoRaise[2920:92006] Got run loop source: YES
+    2021-06-10 12:13:45.939 AutoRaise[2920:92006] Registered appActivated selector
+    ...
+    ...
+
+*Note1*: Dimentium created a homebrew formula for this tool which can be found here:
 
 https://github.com/Dimentium/homebrew-autoraise
 
-*Note3*: Lothar Haeger created a gui on top of the command line version which can be found here:
+*Note2*: Lothar Haeger created a gui on top of the command line version which can be found here:
 
 https://github.com/lhaeger/AutoRaise

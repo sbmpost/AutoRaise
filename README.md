@@ -8,15 +8,19 @@ and use the following commands to compile the binaries:
     unzip -d ~ ~/Downloads/AutoRaise-master.zip
     cd ~/AutoRaise-master && make clean && make
 
-This will give you two files:
+*Note*: The warp feature works accurately with the default OSX task switcher. If you prefer an alternative task switcher and
+are willing to accept that in some cases you may experience an unexpected mouse warp, then replace the above make command with:
+make clean && make CXXFLAGS=-DALTERNATIVE_TASK_SWITCHER
+
+After making the project, you will get two files:
 
     AutoRaise
     AutoRaise.app
 
 AutoRaise can be used directly from the command line in which case it accepts command line parameters. The other binary,
-AutoRaise.app, can be used without a terminal window and relies on the presence of two configuration files. Note also that
-AutoRaise.app runs on the background and can only be stopped via "Activity Monitor" or the AppleScript provided at the bottom
-of this README.
+AutoRaise.app, can be used without a terminal window and relies on the presence of a configuration file. Note also that
+AutoRaise.app runs on the background and can only be stopped via "Activity Monitor" or the AppleScript provided near the
+bottom of this README.
 
 **Command line usage:**
 
@@ -24,9 +28,9 @@ of this README.
 
 The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. In addition to warping the mouse,
 the scale parameter allows you to specify the mouse cursor size. To disable this feature, simply set it to the system configured
-scale (normally 1.0). If no parameters have been specified, AutoRaise defaults to 40ms delay. To pass the parameters by means of a
-configuration file, create a hidden file in one of these locations: **~/.AutoRaise** or **~/.config/AutoRaise/config**. The file
-format is as follows:
+scale (normally 1.0). If no parameters have been specified, AutoRaise disables warp and defaults to 40ms delay. To pass the command
+line parameters by means of a file, create it in one of these locations: **~/.AutoRaise** or **~/.config/AutoRaise/config**.
+The file format is as follows:
 
     #AutoRaise config file
     delay=1 
@@ -62,7 +66,7 @@ Applescript:
 
 **Troubleshooting & Verbose logging**
 
-If you experience any issues, it is advisable to first check these things:
+If you experience any issues, it is advisable to first check these items:
 
 - Are you using the latest version?
 - Does it work with the command line version?
@@ -79,7 +83,7 @@ like so:
 
 The output should look something like this:
 
-    v2.2 by sbmpost(c) 2021, usage:
+    v2.3 by sbmpost(c) 2021, usage:
     AutoRaise -delay <1=20ms> [-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]
     Started with 20 ms delay, warpX: 0.5, warpY: 0.1, scale: 2.5
     2021-06-10 12:13:45.925 AutoRaise[2920:92006] AXIsProcessTrusted: YES

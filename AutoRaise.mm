@@ -27,14 +27,17 @@
 #include <Carbon/Carbon.h>
 
 typedef int CGSConnectionID;
-static float oldScale = 1;
-static float cursorScale = 2;
-static bool activated_by_task_switcher = false;
 extern "C" CGSConnectionID CGSMainConnectionID(void);
 extern "C" CGError CGSSetCursorScale(CGSConnectionID connectionId, float scale);
 extern "C" CGError CGSGetCursorScale(CGSConnectionID connectionId, float *scale);
 extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
 // Above methods are undocumented and subjective to incompatible changes
+
+#ifdef ALTERNATIVE_TASK_SWITCHER
+static CFStringRef Finder = CFSTR("com.apple.finder");
+#else
+static bool activated_by_task_switcher = false;
+#endif
 
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static CFStringRef XQuartz = CFSTR("XQuartz");
@@ -45,6 +48,8 @@ static bool warpMouse = false;
 static bool verbose = false;
 static float warpX = 0.5;
 static float warpY = 0.5;
+static float oldScale = 1;
+static float cursorScale = 2;
 static int raiseTimes = 0;
 static int delayTicks = 0;
 static int delayCount = 0;
@@ -463,12 +468,37 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
 #define SCALEDELAY_MS 300
 const void CppClass::appActivated(NSNotification * notification) {
+    NSRunningApplication *focusedApp = (NSRunningApplication *)
+        notification.userInfo[NSWorkspaceApplicationKey];
+    pid_t focusedApp_pid = focusedApp.processIdentifier;
+
+#ifdef ALTERNATIVE_TASK_SWITCHER
+    CGEventRef _event = CGEventCreate(NULL);
+    CGPoint mousePoint = CGEventGetLocation(_event);
+    if (_event) { CFRelease(_event); }
+
+    bool mouseMoved = fabs(mousePoint.x-oldPoint.x) > 0;
+    mouseMoved = mouseMoved || fabs(mousePoint.y-oldPoint.y) > 0;
+    if (mouseMoved) { return; }
+
+    AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
+    if (_mouseWindow) {
+        pid_t mouseWindow_pid;
+        if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
+            CFStringRef bundleIdentifier = (__bridge CFStringRef) focusedApp.bundleIdentifier;
+            if (mouseWindow_pid == focusedApp_pid || CFEqual(bundleIdentifier, Finder)) {
+                CFRelease(_mouseWindow);
+                return;
+            }
+        }
+        CFRelease(_mouseWindow);
+    }
+#else
     if (!activated_by_task_switcher) { return; }
     activated_by_task_switcher = false;
-    appWasActivated = true;
+#endif
 
-    pid_t focusedApp_pid = ((NSRunningApplication *) notification.userInfo[
-        NSWorkspaceApplicationKey]).processIdentifier;
+    appWasActivated = true;
     AXUIElementRef _focusedWindow = NULL;
     AXUIElementRef _focusedApp = AXUIElementCreateApplication(focusedApp_pid);
     AXUIElementCopyAttributeValue(
@@ -586,6 +616,7 @@ const void CppClass::onTick() {
     }
 }
 
+#ifndef ALTERNATIVE_TASK_SWITCHER
 CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *userInfo) {
     static bool commandTabPressed = false;
     activated_by_task_switcher = type == kCGEventFlagsChanged && commandTabPressed;
@@ -600,12 +631,15 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 
     return event;
 }
+#endif
 
 #define POLLING_MS 20
-#define VERSION "2.2"
+#define VERSION "2.3"
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
-        printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> [-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]", VERSION, POLLING_MS);
+        printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> "
+            "[-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]",
+            VERSION, POLLING_MS);
         
         ConfigClass * config = [[ConfigClass alloc] init];
         [config readConfig: argc];
@@ -619,16 +653,21 @@ int main(int argc, const char * argv[]) {
 
         printf("\nStarted with %d ms delay%s", delayCount*POLLING_MS, warpMouse ? ", " : "\n");
         if (warpMouse) { printf("warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale); }
+#ifdef ALTERNATIVE_TASK_SWITCHER
+        printf("Using alternative task switcher\n");
+#endif
 
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
         bool trusted = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);
         if (verbose) { NSLog(@"AXIsProcessTrusted: %s", trusted ? "YES" : "NO"); }
 
         CGSGetCursorScale(CGSMainConnectionID(), &oldScale);
+        if (verbose) { NSLog(@"System cursor scale: %f", oldScale); }
+
+#ifndef ALTERNATIVE_TASK_SWITCHER
+        CFRunLoopSourceRef runLoopSource = NULL;
         CFMachPortRef eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, 0,
             (1 << kCGEventKeyUp) | (1 << kCGEventFlagsChanged), eventTapHandler, NULL);
-
-        CFRunLoopSourceRef runLoopSource = NULL;
         if (eventTap) {
             runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0);
             if (runLoopSource) {
@@ -637,6 +676,7 @@ int main(int argc, const char * argv[]) {
             }
         }
         if (verbose) { NSLog(@"Got run loop source: %s", runLoopSource ? "YES" : "NO"); }
+#endif
 
         CppClass cppClass = CppClass();
         cppClass.startTimer(POLLING_MS/1000.0);

@@ -33,7 +33,10 @@ extern "C" CGError CGSGetCursorScale(CGSConnectionID connectionId, float *scale)
 extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
 // Above methods are undocumented and subjective to incompatible changes
 
-#ifndef ALTERNATIVE_TASK_SWITCHER
+#ifdef ALTERNATIVE_TASK_SWITCHER
+static CFStringRef Finder = CFSTR("com.apple.finder");
+static AXUIElementRef _previousWindow = NULL;
+#else
 static bool activated_by_task_switcher = false;
 #endif
 
@@ -466,10 +469,48 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
 #define SCALEDELAY_MS 300
 const void CppClass::appActivated(NSNotification * notification) {
-    pid_t focusedApp_pid = ((NSRunningApplication *) notification.userInfo[
-        NSWorkspaceApplicationKey]).processIdentifier;
+//    pid_t focusedApp_pid = ((NSRunningApplication *) notification.userInfo[
+//        NSWorkspaceApplicationKey]).processIdentifier;
+
+    NSRunningApplication *focusedApp = (NSRunningApplication *)
+        notification.userInfo[NSWorkspaceApplicationKey];
+    pid_t focusedApp_pid = focusedApp.processIdentifier;
 
 #ifdef ALTERNATIVE_TASK_SWITCHER
+    NSRunningApplication *currentApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
+    CFStringRef currentIdentifier = (__bridge CFStringRef) currentApp.bundleIdentifier;
+
+    if (CFEqual(currentIdentifier, Finder)) {
+        pid_t finderApp_pid = currentApp.processIdentifier;
+        AXUIElementRef _focusedWindow = NULL;
+        AXUIElementRef _finderApp = AXUIElementCreateApplication(finderApp_pid);
+        AXUIElementCopyAttributeValue(
+            (AXUIElementRef) _finderApp,
+            kAXFocusedWindowAttribute,
+            (CFTypeRef *) &_focusedWindow);
+        if (verbose) { NSLog(@"finder focused window is %@", _focusedWindow); }
+        if (_focusedWindow) {
+
+AXValueRef _pos = NULL;
+AXUIElementCopyAttributeValue(_focusedWindow, kAXPositionAttribute, (CFTypeRef *) &_pos);
+if (_pos) {
+    CGPoint cg_pos;
+    if (AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
+        if (cg_pos.x != 0 || cg_pos.y != 0) {
+            if (_previousWindow) {
+NSLog(@"releasing");
+                CFRelease(_previousWindow);
+            }
+            _previousWindow = _focusedWindow;
+        }
+
+        }
+    }
+}
+
+        CFRelease(_finderApp);
+    }
+
     CGEventRef _event = CGEventCreate(NULL);
     CGPoint mousePoint = CGEventGetLocation(_event);
     if (_event) { CFRelease(_event); }
@@ -495,18 +536,34 @@ const void CppClass::appActivated(NSNotification * notification) {
 #endif
 
     appWasActivated = true;
+
     AXUIElementRef _focusedWindow = NULL;
+#ifdef ALTERNATIVE_TASK_SWITCHER
+    CFStringRef bundleIdentifier = (__bridge CFStringRef) focusedApp.bundleIdentifier;
+    if (CFEqual(bundleIdentifier, Finder)) {
+        _focusedWindow = _previousWindow;
+    } else {
+#endif
     AXUIElementRef _focusedApp = AXUIElementCreateApplication(focusedApp_pid);
     AXUIElementCopyAttributeValue(
         (AXUIElementRef) _focusedApp,
         kAXFocusedWindowAttribute,
         (CFTypeRef *) &_focusedWindow);
     CFRelease(_focusedApp);
+#ifdef ALTERNATIVE_TASK_SWITCHER
+    }
+#endif
 
     if (_focusedWindow) {
         if (verbose) { NSLog(@"Warp mouse"); }
         CGWarpMouseCursorPosition(get_mousepoint((AXUIElementRef) _focusedWindow));
+#ifdef ALTERNATIVE_TASK_SWITCHER
+        if (!CFEqual(bundleIdentifier, Finder)) {
+#endif
         CFRelease(_focusedWindow);
+#ifdef ALTERNATIVE_TASK_SWITCHER
+        }
+#endif
     }
 
     if (cursorScale != oldScale) {

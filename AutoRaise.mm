@@ -33,9 +33,7 @@ extern "C" CGError CGSGetCursorScale(CGSConnectionID connectionId, float *scale)
 extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
 // Above methods are undocumented and subjective to incompatible changes
 
-#ifdef ALTERNATIVE_TASK_SWITCHER
-static CFStringRef Finder = CFSTR("com.apple.finder");
-#else
+#ifndef ALTERNATIVE_TASK_SWITCHER
 static bool activated_by_task_switcher = false;
 #endif
 
@@ -468,9 +466,8 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
 #define SCALEDELAY_MS 300
 const void CppClass::appActivated(NSNotification * notification) {
-    NSRunningApplication *focusedApp = (NSRunningApplication *)
-        notification.userInfo[NSWorkspaceApplicationKey];
-    pid_t focusedApp_pid = focusedApp.processIdentifier;
+    pid_t focusedApp_pid = ((NSRunningApplication *) notification.userInfo[
+        NSWorkspaceApplicationKey]).processIdentifier;
 
 #ifdef ALTERNATIVE_TASK_SWITCHER
     CGEventRef _event = CGEventCreate(NULL);
@@ -485,8 +482,7 @@ const void CppClass::appActivated(NSNotification * notification) {
     if (_mouseWindow) {
         pid_t mouseWindow_pid;
         if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
-            CFStringRef bundleIdentifier = (__bridge CFStringRef) focusedApp.bundleIdentifier;
-            if (mouseWindow_pid == focusedApp_pid || CFEqual(bundleIdentifier, Finder)) {
+            if (mouseWindow_pid == focusedApp_pid) {
                 CFRelease(_mouseWindow);
                 return;
             }

@@ -9,7 +9,7 @@ and use the following commands to compile the binaries:
     cd ~/AutoRaise-master && make clean && make
 
 *Note*: The warp feature works accurately with the default OSX task switcher. If you prefer an alternative task switcher and
-are willing to accept that in some cases you may experience an unexpected mouse warp, then replace the above make command with:
+are willing to accept that in some cases you may encounter an unexpected mouse warp, then replace the above make command with:
 make clean && make CXXFLAGS=-DALTERNATIVE_TASK_SWITCHER
 
 After making the project, you will get two files:
@@ -29,7 +29,7 @@ bottom of this README.
 The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. In addition to warping the mouse,
 the scale parameter allows you to specify the mouse cursor size. To disable this feature, simply set it to the system configured
 scale (normally 1.0). If no parameters have been specified, AutoRaise disables warp and defaults to 40ms delay. To pass the command
-line parameters by means of a file, create it in one of these locations: **~/.AutoRaise** or **~/.config/AutoRaise/config**.
+line parameters by means of a file, create one in either of these locations: **~/.AutoRaise** or **~/.config/AutoRaise/config**.
 The file format is as follows:
 
     #AutoRaise config file
@@ -66,7 +66,7 @@ Applescript:
 
 **Troubleshooting & Verbose logging**
 
-If you experience any issues, it is advisable to first check these items:
+If you experience any issues, it is advisable to first check these points:
 
 - Are you using the latest version?
 - Does it work with the command line version?

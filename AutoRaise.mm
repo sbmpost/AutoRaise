@@ -487,6 +487,7 @@ const void CppClass::appActivated(NSNotification * notification) {
     CFRelease(_focusedApp);
 
     CFStringRef bundleIdentifier = (__bridge CFStringRef) focusedApp.bundleIdentifier;
+    if (verbose) { NSLog(@"bundleIdentifier: %@", bundleIdentifier); }
     bool finder_app = CFEqual(bundleIdentifier, Finder);
     if (finder_app) {
         if (_focusedWindow) {
@@ -527,6 +528,8 @@ const void CppClass::appActivated(NSNotification * notification) {
                 &mouseWindow_pid) == kAXErrorSuccess &&
                 mouseWindow_pid == focusedApp_pid;
             CFRelease(_mouseWindow);
+        } else {
+            ignoreActivated = true;
         }
     }
 

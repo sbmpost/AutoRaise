@@ -128,6 +128,22 @@ AXUIElementRef fallback(CGPoint point) {
     return _window;
 }
 
+/*
+bool inline element_title_equals(AXUIElementRef _element, CFStringRef _title) {
+    bool equal_title = false;
+
+    CFStringRef _elementTitle;
+    if (AXUIElementCopyAttributeValue(_element, kAXTitleAttribute,
+        (CFTypeRef *) &_elementTitle) == kAXErrorSuccess) {
+NSLog(@"element title is %@", _elementTitle);
+        equal_title = CFEqual(_elementTitle, _title);
+        CFRelease(_elementTitle);
+    }
+
+    return equal_title;
+}
+*/
+
 AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
     if (_element) {
         CFStringRef _element_role = NULL;
@@ -257,6 +273,47 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
     }
 
     return contained;
+}
+
+bool inline desktop_window(AXUIElementRef _window) {
+    bool desktop_window = false;
+
+    AXValueRef _pos = NULL;
+    AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
+    if (_pos) {
+        CGPoint cg_pos;
+        if (AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos) && cg_pos.x == 0 && cg_pos.y == 0) {
+            desktop_window = true;
+/*
+            CFStringRef _window_role = NULL;
+            AXUIElementCopyAttributeValue(_window, kAXRoleAttribute, (CFTypeRef *) &_window_role);
+            if (_window_role) {
+//                NSLog(@"window role %@", _window_role);
+                if (CFEqual(_window_role, kAXScrollAreaRole)) {
+                    AXUIElementRef _parent = NULL;
+                    AXUIElementCopyAttributeValue(_window, kAXParentAttribute, (CFTypeRef *) &_parent);
+                    if (_parent) {
+//                        NSLog(@"parent %@", _parent);
+                        CFStringRef _parent_role = NULL;
+                        AXUIElementCopyAttributeValue(_parent, kAXRoleAttribute, (CFTypeRef *) &_parent_role);
+                        if (_parent_role) {
+//                            NSLog(@"parent role %@", _parent_role);
+                            desktop_window = CFEqual(_parent_role, kAXApplicationRole);
+                            // is this Finder?, check with element_title_equals?
+                            CFRelease(_parent_role);
+                        }
+                        CFRelease(_parent);
+                    }
+                }
+                CFRelease(_window_role);
+            }
+*/
+        }
+        CFRelease(_pos);
+    }
+
+    if (verbose && desktop_window) { NSLog(@"desktop window"); }
+    return desktop_window;
 }
 
 //-----------------------------------------------notifications----------------------------------------------
@@ -480,10 +537,7 @@ const void CppClass::appActivated(NSNotification * notification) {
 
     AXUIElementRef _focusedWindow = NULL;
     AXUIElementRef _focusedApp = AXUIElementCreateApplication(focusedApp_pid);
-    AXUIElementCopyAttributeValue(
-        (AXUIElementRef) _focusedApp,
-        kAXFocusedWindowAttribute,
-        (CFTypeRef *) &_focusedWindow);
+    AXUIElementCopyAttributeValue(_focusedApp, kAXFocusedWindowAttribute, (CFTypeRef *) &_focusedWindow);
     CFRelease(_focusedApp);
 
     CFStringRef bundleIdentifier = (__bridge CFStringRef) focusedApp.bundleIdentifier;
@@ -491,18 +545,7 @@ const void CppClass::appActivated(NSNotification * notification) {
     bool finder_app = CFEqual(bundleIdentifier, Finder);
     if (finder_app) {
         if (_focusedWindow) {
-            bool desktop_window = false;
-            AXValueRef _pos = NULL;
-            AXUIElementCopyAttributeValue(_focusedWindow, kAXPositionAttribute, (CFTypeRef *) &_pos);
-            if (_pos) {
-                CGPoint cg_pos;
-                // TODO: Can we use something else instead of relying on the window position?
-                desktop_window = AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos) &&
-                    cg_pos.x == 0 && cg_pos.y == 0;
-                CFRelease(_pos);
-            }
-
-            if (desktop_window) {
+            if (desktop_window(_focusedWindow)) {
                 CFRelease(_focusedWindow);
                 _focusedWindow = _previousFinderWindow;
             } else {
@@ -541,7 +584,7 @@ const void CppClass::appActivated(NSNotification * notification) {
 
     if (_focusedWindow) {
         if (verbose) { NSLog(@"Warp mouse"); }
-        CGWarpMouseCursorPosition(get_mousepoint((AXUIElementRef) _focusedWindow));
+        CGWarpMouseCursorPosition(get_mousepoint(_focusedWindow));
         if (!finder_app) { CFRelease(_focusedWindow); }
     }
 

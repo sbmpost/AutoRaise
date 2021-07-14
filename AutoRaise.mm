@@ -552,7 +552,7 @@ const void CppClass::appActivated(NSNotification * notification) {
             CFRelease(_mouseWindow);
         } else {
             // uncomment if clicking the dock icons should not warp the mouse
-            // ignoreActivated = true;
+            ignoreActivated = true;
         }
     }
 

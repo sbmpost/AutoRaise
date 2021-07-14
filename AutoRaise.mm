@@ -37,6 +37,7 @@ extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
 static bool activated_by_task_switcher = false;
 #endif
 
+static NSScreen * previousScreen = NULL;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
 static CFStringRef Finder = CFSTR("com.apple.finder");
@@ -273,6 +274,20 @@ bool inline desktop_window(AXUIElementRef _window) {
 
     if (verbose && desktop_window) { NSLog(@"desktop window"); }
     return desktop_window;
+}
+
+bool screenChanged(CGPoint point) {
+    bool changed = false;
+    for (NSScreen * screen in [NSScreen screens]) {
+        if (NSPointInRect(NSPointFromCGPoint(point), screen.frame)) {
+            changed = previousScreen != screen;
+            previousScreen = screen;
+            break;
+        }
+    }
+
+    if (verbose && changed) { NSLog(@"screen changed"); }
+    return changed;
 }
 
 //-----------------------------------------------notifications----------------------------------------------
@@ -537,7 +552,7 @@ const void CppClass::appActivated(NSNotification * notification) {
             CFRelease(_mouseWindow);
         } else {
             // uncomment if clicking the dock icons should not warp the mouse
-            // ignoreActivated = true;
+            ignoreActivated = true;
         }
     }
 
@@ -604,6 +619,13 @@ const void CppClass::onTick() {
     if (mouseMoved || delayTicks || raiseTimes) {
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
         if (_mouseWindow) {
+            if ((raiseTimes || delayCount == 1 || delayTicks == 1) &&
+                !desktop_window(_mouseWindow) && !screenChanged(mousePoint)) {
+                CFRelease(_mouseWindow);
+                raiseTimes = 0;
+                delayTicks = 0;
+                return;
+            }
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
                 Boolean needs_raise = true;
@@ -674,7 +696,7 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 #endif
 
 #define POLLING_MS 20
-#define VERSION "2.3"
+#define VERSION "2.4"
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms, 0=warp only> "

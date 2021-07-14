@@ -26,19 +26,17 @@ bottom of this README.
 
     ./AutoRaise -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5
 
-The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. In addition to warping the mouse,
-the scale parameter allows you to specify the mouse cursor size. To disable this feature, simply set it to the system configured
-scale (normally 1.0). If no parameters have been specified, AutoRaise disables warp and defaults to 40ms delay. To pass the command
-line parameters by means of a file, create either a **~/.AutoRaise** file or a **~/.config/AutoRaise/config** file.
-The file format is as follows:
+The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. If you only would like to use
+the warp feature, simply set delay to 0. When warping the mouse, the scale parameter allows you to specify the mouse cursor
+size. To disable this, set it to the system configured scale (normally 1.0). If no parameters have been specified, AutoRaise
+disables warp and defaults to 40ms delay. To pass the command line parameters by means of a file, create either a
+**~/.AutoRaise** file or a **~/.config/AutoRaise/config** file. The file format is as follows:
 
     #AutoRaise config file
     delay=1 
     warpX=0.5
     warpY=0.1
     scale=2.5
-
-*Note*: If you only want the warp feature, simply set delay=0
 
 **AutoRaise.app usage:**
 

@@ -128,22 +128,6 @@ AXUIElementRef fallback(CGPoint point) {
     return _window;
 }
 
-/*
-bool inline element_title_equals(AXUIElementRef _element, CFStringRef _title) {
-    bool equal_title = false;
-
-    CFStringRef _elementTitle;
-    if (AXUIElementCopyAttributeValue(_element, kAXTitleAttribute,
-        (CFTypeRef *) &_elementTitle) == kAXErrorSuccess) {
-NSLog(@"element title is %@", _elementTitle);
-        equal_title = CFEqual(_elementTitle, _title);
-        CFRelease(_elementTitle);
-    }
-
-    return equal_title;
-}
-*/
-
 AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
     if (_element) {
         CFStringRef _element_role = NULL;
@@ -282,33 +266,8 @@ bool inline desktop_window(AXUIElementRef _window) {
     AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
     if (_pos) {
         CGPoint cg_pos;
-        if (AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos) && cg_pos.x == 0 && cg_pos.y == 0) {
-            desktop_window = true;
-/*
-            CFStringRef _window_role = NULL;
-            AXUIElementCopyAttributeValue(_window, kAXRoleAttribute, (CFTypeRef *) &_window_role);
-            if (_window_role) {
-//                NSLog(@"window role %@", _window_role);
-                if (CFEqual(_window_role, kAXScrollAreaRole)) {
-                    AXUIElementRef _parent = NULL;
-                    AXUIElementCopyAttributeValue(_window, kAXParentAttribute, (CFTypeRef *) &_parent);
-                    if (_parent) {
-//                        NSLog(@"parent %@", _parent);
-                        CFStringRef _parent_role = NULL;
-                        AXUIElementCopyAttributeValue(_parent, kAXRoleAttribute, (CFTypeRef *) &_parent_role);
-                        if (_parent_role) {
-//                            NSLog(@"parent role %@", _parent_role);
-                            desktop_window = CFEqual(_parent_role, kAXApplicationRole);
-                            // is this Finder?, check with element_title_equals?
-                            CFRelease(_parent_role);
-                        }
-                        CFRelease(_parent);
-                    }
-                }
-                CFRelease(_window_role);
-            }
-*/
-        }
+        desktop_window = AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos) &&
+            cg_pos.x == 0 && cg_pos.y == 0; // TODO: can we do this better?
         CFRelease(_pos);
     }
 
@@ -484,13 +443,13 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
     // search for dotfiles
     NSString *hiddenConfigFilePath = [self getFilePath: @".AutoRaise"];
     if (!hiddenConfigFilePath) { hiddenConfigFilePath = [self getFilePath: @".config/AutoRaise/config"]; }
-    
+
     if (hiddenConfigFilePath) {
         NSError *error;
         NSString *configContent = [[NSString alloc]
             initWithContentsOfFile: hiddenConfigFilePath
             encoding: NSUTF8StringEncoding error: &error];
-        
+
         // remove all whitespaces from file
         configContent = [configContent stringByReplacingOccurrencesOfString:@" " withString:@""];
         NSArray *configLines = [configContent componentsSeparatedByString:@"\n"];
@@ -511,11 +470,16 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
 - (void) validateParameters {
     // validate and fix wrong/absent parameters
-    if ([parameters[kDelay] intValue] < 1) { parameters[kDelay] = @"2"; }
+    if (!parameters[kDelay]) { parameters[kDelay] = @"2"; }
     if ([parameters[kScale] floatValue] < 1) { parameters[kScale] = @"2.0"; }
     warpMouse =
         parameters[kWarpX] && [parameters[kWarpX] floatValue] >= 0 && [parameters[kWarpX] floatValue] <= 1 &&
         parameters[kWarpY] && [parameters[kWarpY] floatValue] >= 0 && [parameters[kWarpY] floatValue] <= 1;
+    if (![parameters[kDelay] intValue] && !warpMouse) {
+        parameters[kWarpX] = @"0.5";
+        parameters[kWarpY] = @"0.5";
+        warpMouse = true;
+    }
     return;
 }
 
@@ -542,7 +506,7 @@ const void CppClass::appActivated(NSNotification * notification) {
 
     CFStringRef bundleIdentifier = (__bridge CFStringRef) focusedApp.bundleIdentifier;
     if (verbose) { NSLog(@"bundleIdentifier: %@", bundleIdentifier); }
-    bool finder_app = CFEqual(bundleIdentifier, Finder);
+    bool finder_app = bundleIdentifier && CFEqual(bundleIdentifier, Finder);
     if (finder_app) {
         if (_focusedWindow) {
             if (desktop_window(_focusedWindow)) {
@@ -560,8 +524,8 @@ const void CppClass::appActivated(NSNotification * notification) {
     CGPoint mousePoint = CGEventGetLocation(_event);
     if (_event) { CFRelease(_event); }
 
-    bool ignoreActivated = fabs(mousePoint.x-oldPoint.x) > 0;
-    ignoreActivated = ignoreActivated || fabs(mousePoint.y-oldPoint.y) > 0;
+    bool ignoreActivated = delayCount && fabs(mousePoint.x-oldPoint.x) > 0;
+    ignoreActivated = ignoreActivated || (delayCount && fabs(mousePoint.y-oldPoint.y) > 0);
 
     if (!ignoreActivated) {
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
@@ -572,7 +536,8 @@ const void CppClass::appActivated(NSNotification * notification) {
                 mouseWindow_pid == focusedApp_pid;
             CFRelease(_mouseWindow);
         } else {
-            ignoreActivated = true;
+            // uncomment if clicking the dock icons should not warp the mouse
+            // ignoreActivated = true;
         }
     }
 
@@ -712,10 +677,9 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 #define VERSION "2.3"
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
-        printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms> "
-            "[-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]",
-            VERSION, POLLING_MS);
-        
+        printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms, 0=warp only> "
+            "[-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]", VERSION, POLLING_MS);
+
         ConfigClass * config = [[ConfigClass alloc] init];
         [config readConfig: argc];
         [config validateParameters];
@@ -726,7 +690,11 @@ int main(int argc, const char * argv[]) {
         cursorScale = [parameters[kScale] floatValue];
         verbose     = [parameters[kVerbose] boolValue];
 
-        printf("\nStarted with %d ms delay%s", delayCount*POLLING_MS, warpMouse ? ", " : "\n");
+        if (delayCount) {
+            printf("\n\nStarted with %d ms delay%s", delayCount*POLLING_MS, warpMouse ? ", " : "\n");
+        } else {
+            printf("\n\nStarted with warp only, ");
+        }
         if (warpMouse) { printf("warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale); }
 #ifdef ALTERNATIVE_TASK_SWITCHER
         printf("Using alternative task switcher\n");
@@ -754,7 +722,7 @@ int main(int argc, const char * argv[]) {
 #endif
 
         CppClass cppClass = CppClass();
-        cppClass.startTimer(POLLING_MS/1000.0);
+        if (delayCount) { cppClass.startTimer(POLLING_MS/1000.0); }
         [[NSApplication sharedApplication] run];
     }
     return 0;

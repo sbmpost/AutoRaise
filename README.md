@@ -29,7 +29,7 @@ bottom of this README.
 The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. In addition to warping the mouse,
 the scale parameter allows you to specify the mouse cursor size. To disable this feature, simply set it to the system configured
 scale (normally 1.0). If no parameters have been specified, AutoRaise disables warp and defaults to 40ms delay. To pass the command
-line parameters by means of a file, create one in either of these locations: **~/.AutoRaise** or **~/.config/AutoRaise/config**.
+line parameters by means of a file, create either a **~/.AutoRaise** file or a **~/.config/AutoRaise/config** file.
 The file format is as follows:
 
     #AutoRaise config file
@@ -37,6 +37,8 @@ The file format is as follows:
     warpX=0.5
     warpY=0.1
     scale=2.5
+
+*Note*: If you only want the warp feature, simply set delay=0
 
 **AutoRaise.app usage:**
 
@@ -84,11 +86,12 @@ like so:
 The output should look something like this:
 
     v2.3 by sbmpost(c) 2021, usage:
-    AutoRaise -delay <1=20ms> [-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]
+    AutoRaise -delay <1=20ms, 0=warp only> [-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]
+
     Started with 20 ms delay, warpX: 0.5, warpY: 0.1, scale: 2.5
-    2021-06-10 12:13:45.925 AutoRaise[2920:92006] AXIsProcessTrusted: YES
-    2021-06-10 12:13:45.938 AutoRaise[2920:92006] Got run loop source: YES
-    2021-06-10 12:13:45.939 AutoRaise[2920:92006] Registered appActivated selector
+    2021-07-14 17:33:33.924 AutoRaise[56237:1954806] AXIsProcessTrusted: YES
+    2021-07-14 17:33:33.932 AutoRaise[56237:1954806] System cursor scale: 1.000000
+    2021-07-14 17:33:33.932 AutoRaise[56237:1954806] Registered app activated selector
     ...
     ...
 

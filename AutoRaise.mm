@@ -26,6 +26,13 @@
 #include <AppKit/AppKit.h>
 #include <Carbon/Carbon.h>
 
+#define VERSION "2.4"
+// Lowering the polling interval increases responsiveness, but steals more cpu
+// cycles. A workable, yet responsible value seems to be about 20 microseconds.
+#define POLLING_MS 20
+#define ACTIVATE_DELAY_MS 10
+#define SCALE_DELAY_MS (300-ACTIVATE_DELAY_MS)
+
 typedef int CGSConnectionID;
 extern "C" CGSConnectionID CGSMainConnectionID(void);
 extern "C" CGError CGSSetCursorScale(CGSConnectionID connectionId, float scale);
@@ -277,30 +284,17 @@ bool inline desktop_window(AXUIElementRef _window) {
 
 //-----------------------------------------------notifications----------------------------------------------
 
-class CppClass;
-@interface MDWorkspaceWatcher : NSObject {
-    CppClass * cppClass;
-}
-- (id)initWithCppClass:(CppClass *)aCppClass;
+void spaceChanged();
+bool appActivated();
+void onTick();
+
+@interface MDWorkspaceWatcher:NSObject {}
+- (id)init;
 @end
 
-class CppClass {
-private:
-    MDWorkspaceWatcher * workspaceWatcher;
-public:
-    CppClass();
-    ~CppClass();
-    const void spaceChanged(NSNotification * notification);
-    const void appActivated(NSNotification * notification);
-    void scheduleScale(float scale, float scaleDelay);
-    void startTimer(float timerInterval);
-    const void onTick();
-};
-
 @implementation MDWorkspaceWatcher
-- (id)initWithCppClass:(CppClass *)aCppClass {
+- (id)init {
     if ((self = [super init])) {
-        cppClass = aCppClass;
         NSNotificationCenter * center =
             [[NSWorkspace sharedWorkspace] notificationCenter];
         [center
@@ -319,53 +313,48 @@ public:
     }
     return self;
 }
+
 - (void)dealloc {
     [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver: self];
 }
+
 - (void)spaceChanged:(NSNotification *)notification {
     if (verbose) { NSLog(@"Space changed"); }
-    cppClass->spaceChanged(notification);
+    spaceChanged();
 }
+
 - (void)appActivated:(NSNotification *)notification {
     if (verbose) { NSLog(@"App activated"); }
-    cppClass->appActivated(notification);
+    [self performSelector: @selector(onAppActivated)
+        withObject: nil
+        afterDelay: ACTIVATE_DELAY_MS/1000.0];
 }
-- (void)scheduleScale:(NSNumber *)scale :(NSNumber *)scaleDelay {
-    [self performSelector: @selector(onSetCursorScale:)
-        withObject: scale
-        afterDelay: scaleDelay.floatValue];
-    [self performSelector: @selector(onSetCursorScale:)
-        withObject: [NSNumber numberWithFloat: oldScale]
-        afterDelay: scaleDelay.floatValue*3];
+
+- (void)onAppActivated {
+    if (appActivated() && cursorScale != oldScale) {
+        if (verbose) { NSLog(@"Schedule cursor scale"); }
+        [self performSelector: @selector(onSetCursorScale:)
+            withObject: [NSNumber numberWithFloat: cursorScale]
+            afterDelay: SCALE_DELAY_MS/1000.0];
+
+        [self performSelector: @selector(onSetCursorScale:)
+            withObject: [NSNumber numberWithFloat: oldScale]
+            afterDelay: SCALE_DELAY_MS/1000.0*3];
+    }
 }
+
 - (void)onSetCursorScale:(NSNumber *)scale {
     if (verbose) { NSLog(@"Set cursor scale: %@", scale); }
     CGSSetCursorScale(CGSMainConnectionID(), scale.floatValue);
 }
+
 - (void)onTick:(NSNumber *)timerInterval {
     [self performSelector: @selector(onTick:)
         withObject: timerInterval
         afterDelay: timerInterval.floatValue];
-    cppClass->onTick();
+    onTick();
 }
-@end
-
-CppClass::CppClass() {
-    workspaceWatcher = [[MDWorkspaceWatcher alloc] initWithCppClass: this];
-}
-CppClass::~CppClass() {}
-void CppClass::startTimer(float timerInterval) {
-    [(MDWorkspaceWatcher *) workspaceWatcher onTick: [NSNumber numberWithFloat: timerInterval]];
-}
-void CppClass::scheduleScale(float scale, float scaleDelay) {
-    [(MDWorkspaceWatcher *) workspaceWatcher scheduleScale:
-        [NSNumber numberWithFloat: scale]:
-        [NSNumber numberWithFloat: scaleDelay]];
-}
-const void CppClass::spaceChanged(NSNotification * notification) {
-    spaceHasChanged = true;
-    oldPoint.x = oldPoint.y = 0;
-}
+@end // MDWorkspaceWatcher
 
 //----------------------------------------------configuration-----------------------------------------------
 
@@ -386,7 +375,6 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 @end
 
 @implementation ConfigClass
-
 - (NSString *) getFilePath:(NSString *) filename {
     filename = [NSString stringWithFormat: @"%@/%@", NSHomeDirectory(), filename];
     if (not [[NSFileManager defaultManager] fileExistsAtPath: filename]) { filename = NULL; }
@@ -482,21 +470,23 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
     }
     return;
 }
-
-@end
+@end // ConfigClass
 
 //------------------------------------------where it all happens--------------------------------------------
 
-#define SCALEDELAY_MS 300
-const void CppClass::appActivated(NSNotification * notification) {
+void spaceChanged() {
+    spaceHasChanged = true;
+    oldPoint.x = oldPoint.y = 0;
+}
+
+bool appActivated() {
 #ifndef ALTERNATIVE_TASK_SWITCHER
-    if (!activated_by_task_switcher) { return; }
+    if (!activated_by_task_switcher) { return false; }
     activated_by_task_switcher = false;
 #endif
     appWasActivated = true;
 
-    NSRunningApplication *focusedApp = (NSRunningApplication *)
-        notification.userInfo[NSWorkspaceApplicationKey];
+    NSRunningApplication *focusedApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
     pid_t focusedApp_pid = focusedApp.processIdentifier;
 
     AXUIElementRef _focusedWindow = NULL;
@@ -524,26 +514,28 @@ const void CppClass::appActivated(NSNotification * notification) {
     CGPoint mousePoint = CGEventGetLocation(_event);
     if (_event) { CFRelease(_event); }
 
-    bool ignoreActivated = delayCount && fabs(mousePoint.x-oldPoint.x) > 0;
-    ignoreActivated = ignoreActivated || (delayCount && fabs(mousePoint.y-oldPoint.y) > 0);
-
-    if (!ignoreActivated) {
-        AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
-        if (_mouseWindow) {
+    bool ignoreActivated = false;
+    AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
+    if (_mouseWindow) {
+        // checking for mouse movement reduces the problem of the mouse being warped
+        // when changing spaces and simultaneously moving the mouse to another screen
+        ignoreActivated = fabs(mousePoint.x-oldPoint.x) > 0;
+        ignoreActivated = ignoreActivated || fabs(mousePoint.y-oldPoint.y) > 0;
+        if (!ignoreActivated) {
             pid_t mouseWindow_pid;
             ignoreActivated = AXUIElementGetPid(_mouseWindow,
                 &mouseWindow_pid) == kAXErrorSuccess &&
                 mouseWindow_pid == focusedApp_pid;
-            CFRelease(_mouseWindow);
-        } else {
-            // uncomment if clicking the dock icons should not warp the mouse
-            // ignoreActivated = true;
         }
+        CFRelease(_mouseWindow);
+    } else { // dock or top menu
+        // uncomment if clicking the dock icons should not warp the mouse
+        // ignoreActivated = true;
     }
 
     if (ignoreActivated) {
         if (!finder_app && _focusedWindow) { CFRelease(_focusedWindow); }
-        return;
+        return false;
     }
 #endif
 
@@ -553,18 +545,10 @@ const void CppClass::appActivated(NSNotification * notification) {
         if (!finder_app) { CFRelease(_focusedWindow); }
     }
 
-    if (cursorScale != oldScale) {
-        if (verbose) { NSLog(@"Schedule cursor scale"); }
-        scheduleScale(cursorScale, SCALEDELAY_MS/1000.0);
-    }
+    return true;
 }
 
-const void CppClass::onTick() {
-    // delayTicks = 0 -> delay disabled
-    // delayTicks = 1 -> delay finished
-    // delayTicks = n -> delay started
-    if (delayTicks > 1) { delayTicks--; }
-
+void onTick() {
     // determine if mouseMoved
     CGEventRef _event = CGEventCreate(NULL);
     CGPoint mousePoint = CGEventGetLocation(_event);
@@ -573,6 +557,16 @@ const void CppClass::onTick() {
     bool mouseMoved = fabs(mousePoint.x-oldPoint.x) > 0;
     mouseMoved = mouseMoved || fabs(mousePoint.y-oldPoint.y) > 0;
     oldPoint = mousePoint;
+
+#ifdef ALTERNATIVE_TASK_SWITCHER
+    // delayCount = 0 -> warp only
+    if (!delayCount) { return; }
+#endif
+
+    // delayTicks = 0 -> delay disabled
+    // delayTicks = 1 -> delay finished
+    // delayTicks = n -> delay started
+    if (delayTicks > 1) { delayTicks--; }
 
     if (appWasActivated) {
         appWasActivated = false;
@@ -673,12 +667,11 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 }
 #endif
 
-#define POLLING_MS 20
-#define VERSION "2.3"
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
-        printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms, 0=warp only> "
-            "[-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]", VERSION, POLLING_MS);
+        printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms, 2=%dms, ..., 0=warp only> "
+            "[-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]",
+            VERSION, POLLING_MS, POLLING_MS*2);
 
         ConfigClass * config = [[ConfigClass alloc] init];
         [config readConfig: argc];
@@ -696,6 +689,7 @@ int main(int argc, const char * argv[]) {
             printf("\n\nStarted with warp only, ");
         }
         if (warpMouse) { printf("warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale); }
+
 #ifdef ALTERNATIVE_TASK_SWITCHER
         printf("Using alternative task switcher\n");
 #endif
@@ -707,7 +701,11 @@ int main(int argc, const char * argv[]) {
         CGSGetCursorScale(CGSMainConnectionID(), &oldScale);
         if (verbose) { NSLog(@"System cursor scale: %f", oldScale); }
 
-#ifndef ALTERNATIVE_TASK_SWITCHER
+        MDWorkspaceWatcher * workspaceWatcher = [[MDWorkspaceWatcher alloc] init];
+
+#ifdef ALTERNATIVE_TASK_SWITCHER
+        [workspaceWatcher onTick: [NSNumber numberWithFloat: POLLING_MS/1000.0]];
+#else
         CFRunLoopSourceRef runLoopSource = NULL;
         CFMachPortRef eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, 0,
             (1 << kCGEventKeyUp) | (1 << kCGEventFlagsChanged), eventTapHandler, NULL);
@@ -719,10 +717,9 @@ int main(int argc, const char * argv[]) {
             }
         }
         if (verbose) { NSLog(@"Got run loop source: %s", runLoopSource ? "YES" : "NO"); }
+        if (delayCount) { [workspaceWatcher onTick: [NSNumber numberWithFloat: POLLING_MS/1000.0]]; }
 #endif
 
-        CppClass cppClass = CppClass();
-        if (delayCount) { cppClass.startTimer(POLLING_MS/1000.0); }
         [[NSApplication sharedApplication] run];
     }
     return 0;

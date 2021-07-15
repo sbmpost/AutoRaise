@@ -290,13 +290,14 @@ private:
 public:
     CppClass();
     ~CppClass();
-    const void spaceChanged(NSNotification * notification);
-    const void appActivated(NSNotification * notification);
-    void scheduleScale(float scale, float scaleDelay);
+    void spaceChanged(NSNotification * notification);
+    bool appActivated();
     void startTimer(float timerInterval);
-    const void onTick();
+    void onTick();
 };
 
+#define ACTIVATEDELAY_MS 10
+#define SCALEDELAY_MS (300-ACTIVATEDELAY_MS)
 @implementation MDWorkspaceWatcher
 - (id)initWithCppClass:(CppClass *)aCppClass {
     if ((self = [super init])) {
@@ -328,15 +329,21 @@ public:
 }
 - (void)appActivated:(NSNotification *)notification {
     if (verbose) { NSLog(@"App activated"); }
-    cppClass->appActivated(notification);
+    [self performSelector: @selector(onAppActivated)
+        withObject: nil
+        afterDelay: ACTIVATEDELAY_MS/1000.0];
 }
-- (void)scheduleScale:(NSNumber *)scale :(NSNumber *)scaleDelay {
-    [self performSelector: @selector(onSetCursorScale:)
-        withObject: scale
-        afterDelay: scaleDelay.floatValue];
-    [self performSelector: @selector(onSetCursorScale:)
-        withObject: [NSNumber numberWithFloat: oldScale]
-        afterDelay: scaleDelay.floatValue*3];
+- (void)onAppActivated {
+    if (cppClass->appActivated() && cursorScale != oldScale) {
+        if (verbose) { NSLog(@"Schedule cursor scale"); }
+        [self performSelector: @selector(onSetCursorScale:)
+            withObject: [NSNumber numberWithFloat: cursorScale]
+            afterDelay: SCALEDELAY_MS/1000.0];
+
+        [self performSelector: @selector(onSetCursorScale:)
+            withObject: [NSNumber numberWithFloat: oldScale]
+            afterDelay: SCALEDELAY_MS/1000.0*3];
+    }
 }
 - (void)onSetCursorScale:(NSNumber *)scale {
     if (verbose) { NSLog(@"Set cursor scale: %@", scale); }
@@ -357,12 +364,7 @@ CppClass::~CppClass() {}
 void CppClass::startTimer(float timerInterval) {
     [(MDWorkspaceWatcher *) workspaceWatcher onTick: [NSNumber numberWithFloat: timerInterval]];
 }
-void CppClass::scheduleScale(float scale, float scaleDelay) {
-    [(MDWorkspaceWatcher *) workspaceWatcher scheduleScale:
-        [NSNumber numberWithFloat: scale]:
-        [NSNumber numberWithFloat: scaleDelay]];
-}
-const void CppClass::spaceChanged(NSNotification * notification) {
+void CppClass::spaceChanged(NSNotification * notification) {
     spaceHasChanged = true;
     oldPoint.x = oldPoint.y = 0;
 }
@@ -487,16 +489,14 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
 //------------------------------------------where it all happens--------------------------------------------
 
-#define SCALEDELAY_MS 300
-const void CppClass::appActivated(NSNotification * notification) {
+bool CppClass::appActivated() {
 #ifndef ALTERNATIVE_TASK_SWITCHER
-    if (!activated_by_task_switcher) { return; }
+    if (!activated_by_task_switcher) { return false; }
     activated_by_task_switcher = false;
 #endif
     appWasActivated = true;
 
-    NSRunningApplication *focusedApp = (NSRunningApplication *)
-        notification.userInfo[NSWorkspaceApplicationKey];
+    NSRunningApplication *focusedApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
     pid_t focusedApp_pid = focusedApp.processIdentifier;
 
     AXUIElementRef _focusedWindow = NULL;
@@ -524,8 +524,8 @@ const void CppClass::appActivated(NSNotification * notification) {
     CGPoint mousePoint = CGEventGetLocation(_event);
     if (_event) { CFRelease(_event); }
 
-    bool ignoreActivated = delayCount && fabs(mousePoint.x-oldPoint.x) > 0;
-    ignoreActivated = ignoreActivated || (delayCount && fabs(mousePoint.y-oldPoint.y) > 0);
+    bool ignoreActivated = delayCount && fabs(mousePoint.x-oldPoint.x) > 2;
+    ignoreActivated = ignoreActivated || (delayCount && fabs(mousePoint.y-oldPoint.y) > 2);
 
     if (!ignoreActivated) {
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
@@ -543,7 +543,7 @@ const void CppClass::appActivated(NSNotification * notification) {
 
     if (ignoreActivated) {
         if (!finder_app && _focusedWindow) { CFRelease(_focusedWindow); }
-        return;
+        return false;
     }
 #endif
 
@@ -553,13 +553,10 @@ const void CppClass::appActivated(NSNotification * notification) {
         if (!finder_app) { CFRelease(_focusedWindow); }
     }
 
-    if (cursorScale != oldScale) {
-        if (verbose) { NSLog(@"Schedule cursor scale"); }
-        scheduleScale(cursorScale, SCALEDELAY_MS/1000.0);
-    }
+    return true;
 }
 
-const void CppClass::onTick() {
+void CppClass::onTick() {
     // delayTicks = 0 -> delay disabled
     // delayTicks = 1 -> delay finished
     // delayTicks = n -> delay started
@@ -673,8 +670,10 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 }
 #endif
 
+// Lowering the polling interval increases responsiveness, but steals more cpu
+// cycles. A workable, yet responsible value seems to be about 20 microseconds.
 #define POLLING_MS 20
-#define VERSION "2.3"
+#define VERSION "2.4"
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms, 0=warp only> "

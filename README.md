@@ -83,13 +83,14 @@ like so:
 
 The output should look something like this:
 
-    v2.3 by sbmpost(c) 2021, usage:
-    AutoRaise -delay <1=20ms, 0=warp only> [-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]
+    v2.4 by sbmpost(c) 2021, usage:
+    AutoRaise -delay <1=20ms, 2=40ms, ..., 0=warp only> [-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]
 
     Started with 20 ms delay, warpX: 0.5, warpY: 0.1, scale: 2.5
-    2021-07-14 17:33:33.924 AutoRaise[56237:1954806] AXIsProcessTrusted: YES
-    2021-07-14 17:33:33.932 AutoRaise[56237:1954806] System cursor scale: 1.000000
-    2021-07-14 17:33:33.932 AutoRaise[56237:1954806] Registered app activated selector
+    2021-07-28 19:07:45.910 AutoRaise[978:9295] AXIsProcessTrusted: YES
+    2021-07-28 19:07:45.917 AutoRaise[978:9295] System cursor scale: 1.000000
+    2021-07-28 19:07:45.922 AutoRaise[978:9295] Got run loop source: YES
+    2021-07-28 19:07:45.922 AutoRaise[978:9295] Registered app activated selector
     ...
     ...
 

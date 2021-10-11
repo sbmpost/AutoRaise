@@ -25,8 +25,10 @@
 #include <Foundation/Foundation.h>
 #include <AppKit/AppKit.h>
 #include <Carbon/Carbon.h>
+#include <libproc.h>
 
-#define AUTORAISE_VERSION "2.4"
+#define AUTORAISE_VERSION "2.5"
+#define STACK_THRESHOLD 20
 
 // Lowering the polling interval increases responsiveness, but steals more cpu
 // cycles. A workable, yet responsible value seems to be about 20 microseconds.
@@ -36,8 +38,8 @@
 // find the latest focused (main)window. This value should be kept as low as possible.
 #define ACTIVATE_DELAY_MS 10
 
-#define SCALE_DELAY_MS (410-ACTIVATE_DELAY_MS) // effectively 0.4s, feel free to modify
-#define SCALE_DURATION_MS (SCALE_DELAY_MS+600) // effectively 1.0s, feel free to modify
+#define SCALE_DELAY_MS 400 // The moment the mouse scaling should start, feel free to modify.
+#define SCALE_DURATION_MS (SCALE_DELAY_MS+600) // Mouse scale duration, feel free to modify.
 
 typedef int CGSConnectionID;
 extern "C" CGSConnectionID CGSMainConnectionID(void);
@@ -46,6 +48,7 @@ extern "C" CGError CGSGetCursorScale(CGSConnectionID connectionId, float *scale)
 extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
 // Above methods are undocumented and subjective to incompatible changes
 
+static char pathBuffer[PROC_PIDPATHINFO_MAXSIZE];
 static bool activated_by_task_switcher = false;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
@@ -68,12 +71,15 @@ static int delayCount = 0;
 
 void activate(pid_t pid) {
     if (verbose) { NSLog(@"Activate"); }
-    // [[NSRunningApplication runningApplicationWithProcessIdentifier: pid]
-    //   activateWithOptions: NSApplicationActivateIgnoringOtherApps];
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_11_6
+    [[NSRunningApplication runningApplicationWithProcessIdentifier: pid]
+      activateWithOptions: NSApplicationActivateIgnoringOtherApps];
+#else
     // Temporary solution as NSRunningApplication does not work properly on OSX 11.1
     ProcessSerialNumber process;
     OSStatus error = GetProcessForPID(pid, &process);
     if (!error) { SetFrontProcessWithOptions(&process, kSetFrontProcessFrontWindowOnly); }
+#endif
 }
 
 NSDictionary * topwindow(CGPoint point) {
@@ -138,8 +144,25 @@ AXUIElementRef fallback(CGPoint point) {
     return _window;
 }
 
-AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
+AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int count) {
     if (_element) {
+        if (count >= STACK_THRESHOLD) {
+            if (verbose) {
+                NSLog(@"Stack threshold reached");
+                CFStringRef _elementTitle = NULL;
+                AXUIElementCopyAttributeValue(_element, kAXTitleAttribute, (CFTypeRef *) &_elementTitle);
+                NSLog(@"element: %@, element title: %@", _element, _elementTitle);
+                if (_elementTitle) { CFRelease(_elementTitle); }
+                pid_t application_pid;
+                if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
+                    proc_pidpath(application_pid, pathBuffer, sizeof(pathBuffer));
+                    NSLog(@"application path: %s", pathBuffer);
+                }
+            }
+            CFRelease(_element);
+            return NULL;
+        }
+
         CFStringRef _element_role = NULL;
         AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
         bool check_attributes = !_element_role;
@@ -187,7 +210,7 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
             AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *) &_window);
             if (!_window) {
                 AXUIElementCopyAttributeValue(_element, kAXParentAttribute, (CFTypeRef *) &_window);
-                _window = get_raiseable_window(_window, point);
+                _window = get_raiseable_window(_window, point, ++count);
             }
             CFRelease(_element);
             return _window;
@@ -202,7 +225,7 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point) {
 AXUIElementRef get_mousewindow(CGPoint point) {
     AXUIElementRef _element = NULL;
     AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
-    AXUIElementRef _window = get_raiseable_window(_element, point);
+    AXUIElementRef _window = get_raiseable_window(_element, point, 0);
     if (verbose && !_window) { NSLog(@"No raisable window"); }
     return _window;
 }
@@ -333,7 +356,7 @@ void onTick();
 
 - (void)onAppActivated {
     if (appActivated() && cursorScale != oldScale) {
-        if (verbose) { NSLog(@"Schedule cursor scale after %0.3fs", SCALE_DELAY_MS/1000.0); }
+        if (verbose) { NSLog(@"Set cursor scale after %0.3fs", SCALE_DELAY_MS/1000.0); }
         [self performSelector: @selector(onSetCursorScale:)
             withObject: [NSNumber numberWithFloat: cursorScale]
             afterDelay: SCALE_DELAY_MS/1000.0];
@@ -493,10 +516,12 @@ bool appActivated() {
 
     AXUIElementRef _activatedWindow = NULL;
     AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
-    AXUIElementCopyAttributeValue(_frontmostApp, kAXMainWindowAttribute, (CFTypeRef *) &_activatedWindow);
+    AXUIElementCopyAttributeValue(_frontmostApp,
+        kAXMainWindowAttribute, (CFTypeRef *) &_activatedWindow);
     if (!_activatedWindow) {
         if (verbose) { NSLog(@"No main window, trying focused window"); }
-        AXUIElementCopyAttributeValue(_frontmostApp, kAXFocusedWindowAttribute, (CFTypeRef *) &_activatedWindow);
+        AXUIElementCopyAttributeValue(_frontmostApp,
+            kAXFocusedWindowAttribute, (CFTypeRef *) &_activatedWindow);
     }
     CFRelease(_frontmostApp);
 

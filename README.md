@@ -66,7 +66,7 @@ Applescript:
 
 **Troubleshooting & Verbose logging**
 
-If you experience any issues, it is advisable to first check these points:
+If you experience any issues, it is suggested to first check these points:
 
 - Are you using the latest version?
 - Does it work with the command line version?
@@ -83,7 +83,7 @@ like so:
 
 The output should look something like this:
 
-    v2.4 by sbmpost(c) 2021, usage:
+    v2.5 by sbmpost(c) 2021, usage:
     AutoRaise -delay <1=20ms, 2=40ms, ..., 0=warp only> [-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]
 
     Started with 20 ms delay, warpX: 0.5, warpY: 0.1, scale: 2.5

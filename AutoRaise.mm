@@ -1,5 +1,5 @@
 /*
- * AutoRaise - Copyright (C) 2021 sbmpost
+ * AutoRaise - Copyright (C) 2022 sbmpost
  * Some pieces of the code are based on
  * metamove by jmgao as part of XFree86
  *
@@ -27,7 +27,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "2.5"
+#define AUTORAISE_VERSION "2.6"
 #define STACK_THRESHOLD 20
 
 // Lowering the polling interval increases responsiveness, but steals more cpu
@@ -54,6 +54,7 @@ static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
 static CFStringRef Finder = CFSTR("com.apple.finder");
 static CFStringRef XQuartz = CFSTR("XQuartz");
+static CFStringRef Emacs = CFSTR("Emacs");
 static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
 static bool appWasActivated = false;
@@ -189,7 +190,8 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int 
                             kAXTitleAttribute,
                             (CFTypeRef *) &_applicationTitle
                         ) == kAXErrorSuccess) {
-                            if(CFEqual(_applicationTitle, XQuartz)) {
+                            if(CFEqual(_applicationTitle, XQuartz) ||
+                               CFEqual(_applicationTitle, Emacs)) {
                                 activate(application_pid);
                             }
                             CFRelease(_applicationTitle);
@@ -707,7 +709,7 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
-        printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms, 2=%dms, ..., 0=warp only> "
+        printf("\nv%s by sbmpost(c) 2022, usage:\nAutoRaise -delay <1=%dms, 2=%dms, ..., 0=warp only> "
             "[-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]",
             AUTORAISE_VERSION, POLLING_MS, POLLING_MS*2);
 

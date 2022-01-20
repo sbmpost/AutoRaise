@@ -1,5 +1,5 @@
 /*
- * AutoRaise - Copyright (C) 2021 sbmpost
+ * AutoRaise - Copyright (C) 2022 sbmpost
  * Some pieces of the code are based on
  * metamove by jmgao as part of XFree86
  *
@@ -27,7 +27,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "2.5"
+#define AUTORAISE_VERSION "2.6"
 #define STACK_THRESHOLD 20
 
 // Lowering the polling interval increases responsiveness, but steals more cpu
@@ -177,28 +177,29 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int 
                 CFEqual(_element_role, kAXDrawerRole)) {
                 CFRelease(_element_role);
                 return _element;
-            } else if (CFEqual(_element_role, kAXApplicationRole)) { // XQuartz special case
-                pid_t application_pid;
-                if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
-                    pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
-                        frontmostApplication] processIdentifier];
-                    if (application_pid != frontmost_pid) {
-                        CFStringRef _applicationTitle;
-                        if (AXUIElementCopyAttributeValue(
-                            _element,
-                            kAXTitleAttribute,
-                            (CFTypeRef *) &_applicationTitle
-                        ) == kAXErrorSuccess) {
-                            if(CFEqual(_applicationTitle, XQuartz)) {
+            } else if (CFEqual(_element_role, kAXApplicationRole)) {
+                CFRelease(_element_role);
+                bool xquartz = false;
+                CFStringRef _applicationTitle;
+                if (AXUIElementCopyAttributeValue(_element, kAXTitleAttribute,
+                    (CFTypeRef *) &_applicationTitle) == kAXErrorSuccess) {
+                    xquartz = CFEqual(_applicationTitle, XQuartz);
+                    if (xquartz) {
+                        pid_t application_pid;
+                        if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
+                            pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
+                                frontmostApplication] processIdentifier];
+                            if (application_pid != frontmost_pid) {
+                                // Focus and/or raising is the responsibility of XQuartz.
+                                // As such AutoRaise features (delay/warp) do not apply.
                                 activate(application_pid);
                             }
-                            CFRelease(_applicationTitle);
                         }
+                        CFRelease(_element);
                     }
+                    CFRelease(_applicationTitle);
                 }
-
-                CFRelease(_element_role);
-                CFRelease(_element);
+                check_attributes = !xquartz;
             } else {
                 CFRelease(_element_role);
                 check_attributes = true;
@@ -707,7 +708,7 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
-        printf("\nv%s by sbmpost(c) 2021, usage:\nAutoRaise -delay <1=%dms, 2=%dms, ..., 0=warp only> "
+        printf("\nv%s by sbmpost(c) 2022, usage:\nAutoRaise -delay <1=%dms, 2=%dms, ..., 0=warp only> "
             "[-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]",
             AUTORAISE_VERSION, POLLING_MS, POLLING_MS*2);
 

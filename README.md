@@ -83,7 +83,7 @@ like so:
 
 The output should look something like this:
 
-    v2.5 by sbmpost(c) 2021, usage:
+    v2.6 by sbmpost(c) 2022, usage:
     AutoRaise -delay <1=20ms, 2=40ms, ..., 0=warp only> [-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]
 
     Started with 20 ms delay, warpX: 0.5, warpY: 0.1, scale: 2.5

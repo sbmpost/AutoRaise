@@ -54,7 +54,6 @@ static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
 static CFStringRef Finder = CFSTR("com.apple.finder");
 static CFStringRef XQuartz = CFSTR("XQuartz");
-static CFStringRef Emacs = CFSTR("Emacs");
 static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
 static bool appWasActivated = false;
@@ -178,29 +177,29 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int 
                 CFEqual(_element_role, kAXDrawerRole)) {
                 CFRelease(_element_role);
                 return _element;
-            } else if (CFEqual(_element_role, kAXApplicationRole)) { // XQuartz special case
-                pid_t application_pid;
-                if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
-                    pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
-                        frontmostApplication] processIdentifier];
-                    if (application_pid != frontmost_pid) {
-                        CFStringRef _applicationTitle;
-                        if (AXUIElementCopyAttributeValue(
-                            _element,
-                            kAXTitleAttribute,
-                            (CFTypeRef *) &_applicationTitle
-                        ) == kAXErrorSuccess) {
-                            if(CFEqual(_applicationTitle, XQuartz) ||
-                               CFEqual(_applicationTitle, Emacs)) {
+            } else if (CFEqual(_element_role, kAXApplicationRole)) {
+                CFRelease(_element_role);
+                bool xquartz = false;
+                CFStringRef _applicationTitle;
+                if (AXUIElementCopyAttributeValue(_element, kAXTitleAttribute,
+                    (CFTypeRef *) &_applicationTitle) == kAXErrorSuccess) {
+                    xquartz = CFEqual(_applicationTitle, XQuartz);
+                    if (xquartz) {
+                        pid_t application_pid;
+                        if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
+                            pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
+                                frontmostApplication] processIdentifier];
+                            if (application_pid != frontmost_pid) {
+                                // Focus and/or raising is the responsibility of XQuartz.
+                                // As such AutoRaise features (delay/warp) do not apply.
                                 activate(application_pid);
                             }
-                            CFRelease(_applicationTitle);
                         }
+                        CFRelease(_element);
                     }
+                    CFRelease(_applicationTitle);
                 }
-
-                CFRelease(_element_role);
-                CFRelease(_element);
+                check_attributes = !xquartz;
             } else {
                 CFRelease(_element_role);
                 check_attributes = true;

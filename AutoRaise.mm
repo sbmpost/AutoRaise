@@ -27,7 +27,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "2.6"
+#define AUTORAISE_VERSION "2.7"
 #define STACK_THRESHOLD 20
 
 // Lowering the polling interval increases responsiveness, but steals more cpu
@@ -52,6 +52,7 @@ static char pathBuffer[PROC_PIDPATHINFO_MAXSIZE];
 static bool activated_by_task_switcher = false;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
+static CFStringRef AssistiveControl = CFSTR("AssistiveControl");
 static CFStringRef Finder = CFSTR("com.apple.finder");
 static CFStringRef XQuartz = CFSTR("XQuartz");
 static CGPoint oldPoint = {0, 0};
@@ -640,25 +641,38 @@ void onTick() {
         if (_mouseWindow) {
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
-                Boolean needs_raise = true;
-                pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
-                    frontmostApplication] processIdentifier];
-                AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
-                if (_frontmostApp) {
-                    AXUIElementRef _focusedWindow = NULL;
-                    AXUIElementCopyAttributeValue(
-                        _frontmostApp,
-                        kAXFocusedWindowAttribute,
-                        (CFTypeRef *) &_focusedWindow);
-                    if (_focusedWindow) {
-                        CGWindowID window1_id, window2_id;
-                        _AXUIElementGetWindow(_mouseWindow, &window1_id);
-                        _AXUIElementGetWindow(_focusedWindow, &window2_id);
-                        needs_raise = window1_id != window2_id &&
-                            !contained_within(_focusedWindow, _mouseWindow);
-                        CFRelease(_focusedWindow);
+                bool needs_raise = true;
+
+                CFStringRef _mouseWindowAppTitle = NULL;
+                AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
+                AXUIElementCopyAttributeValue(_mouseWindowApp, kAXTitleAttribute, (CFTypeRef *) &_mouseWindowAppTitle);
+                if (_mouseWindowAppTitle) {
+                    needs_raise = !CFEqual(_mouseWindowAppTitle, AssistiveControl);
+                    if (verbose && !needs_raise) { NSLog(@"Excluding: %@", _mouseWindowAppTitle); }
+                    CFRelease(_mouseWindowAppTitle);
+                }
+                CFRelease(_mouseWindowApp);
+
+                if (needs_raise) {
+                    pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
+                        frontmostApplication] processIdentifier];
+                    AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
+                    if (_frontmostApp) {
+                        AXUIElementRef _focusedWindow = NULL;
+                        AXUIElementCopyAttributeValue(
+                            _frontmostApp,
+                            kAXFocusedWindowAttribute,
+                            (CFTypeRef *) &_focusedWindow);
+                        if (_focusedWindow) {
+                            CGWindowID window1_id, window2_id;
+                            _AXUIElementGetWindow(_mouseWindow, &window1_id);
+                            _AXUIElementGetWindow(_focusedWindow, &window2_id);
+                            needs_raise = window1_id != window2_id &&
+                                !contained_within(_focusedWindow, _mouseWindow);
+                            CFRelease(_focusedWindow);
+                        }
+                        CFRelease(_frontmostApp);
                     }
-                    CFRelease(_frontmostApp);
                 }
 
                 if (needs_raise) {

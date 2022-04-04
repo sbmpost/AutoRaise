@@ -30,6 +30,16 @@
 #define AUTORAISE_VERSION "2.7"
 #define STACK_THRESHOLD 20
 
+// It seems OSX Monterey introduced a transparent 3 pixel border around each window. This
+// means that when two windows are visually precisely connected and not overlapping, in
+// reality they are. Consequently one has to move the mouse 3 pixels further out of the
+// visual area to make the connected window raise. This new OSX 'feature' also introduces
+// unwanted raising of windows when visually connected to the top menu bar. To solve this
+// we require the mouse to be at least 5 pixels within a window boundary before raising.
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
+#define MOUSE_DISTANCE 5
+#endif
+
 // Lowering the polling interval increases responsiveness, but steals more cpu
 // cycles. A workable, yet responsible value seems to be about 20 microseconds.
 #define POLLING_MS 20
@@ -308,6 +318,31 @@ bool inline desktop_window(AXUIElementRef _window) {
 
     if (verbose && desktop_window) { NSLog(@"desktop window"); }
     return desktop_window;
+}
+
+int get_mouse_distance(CGPoint point, AXUIElementRef _window) {
+    int mouse_distance = INT_MAX;
+    AXValueRef _size = nullptr;
+    AXValueRef _pos = nullptr;
+
+    AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
+    if (_size) {
+        AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
+        if (_pos) {
+            CGSize cg_size;
+            CGPoint cg_pos;
+            if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size) &&
+                AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
+                int horizontal = fmin(point.x - cg_pos.x, cg_pos.x + cg_size.width - point.x);
+                int vertical = fmin(point.y - cg_pos.y, cg_pos.y + cg_size.height - point.y);
+                mouse_distance = fmin(horizontal, vertical);
+            }
+            CFRelease(_pos);
+        }
+        CFRelease(_size);
+    }
+
+    return mouse_distance;
 }
 
 //-----------------------------------------------notifications----------------------------------------------
@@ -641,17 +676,23 @@ void onTick() {
         if (_mouseWindow) {
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
+                bool needs_raise = get_mouse_distance(mousePoint, _mouseWindow) >= MOUSE_DISTANCE;
+#else
                 bool needs_raise = true;
-
-                CFStringRef _mouseWindowAppTitle = NULL;
-                AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
-                AXUIElementCopyAttributeValue(_mouseWindowApp, kAXTitleAttribute, (CFTypeRef *) &_mouseWindowAppTitle);
-                if (_mouseWindowAppTitle) {
-                    needs_raise = !CFEqual(_mouseWindowAppTitle, AssistiveControl);
-                    if (verbose && !needs_raise) { NSLog(@"Excluding: %@", _mouseWindowAppTitle); }
-                    CFRelease(_mouseWindowAppTitle);
+#endif
+                if (needs_raise) {
+                    CFStringRef _mouseWindowAppTitle = NULL;
+                    AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
+                    AXUIElementCopyAttributeValue(_mouseWindowApp,
+                        kAXTitleAttribute, (CFTypeRef *) &_mouseWindowAppTitle);
+                    if (_mouseWindowAppTitle) {
+                        needs_raise = !CFEqual(_mouseWindowAppTitle, AssistiveControl);
+                        if (verbose && !needs_raise) { NSLog(@"Excluding: %@", _mouseWindowAppTitle); }
+                        CFRelease(_mouseWindowAppTitle);
+                    }
+                    CFRelease(_mouseWindowApp);
                 }
-                CFRelease(_mouseWindowApp);
 
                 if (needs_raise) {
                     pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]

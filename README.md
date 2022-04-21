@@ -28,12 +28,14 @@ bottom of this README.
 
 **Command line usage:**
 
-    ./AutoRaise -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5
+    ./AutoRaise -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -mouseStop false
 
-The delay is specified in units of 20ms and the warp parameters are factors between 0 and 1. If you only would like to use
+The delay is specified in units of 50ms and the warp parameters are factors between 0 and 1. If you only would like to use
 the warp feature, simply set delay to 0. When warping the mouse, the scale parameter allows you to specify the mouse cursor
 size. To disable this, set it to the system configured scale (normally 1.0). If no parameters have been specified, AutoRaise
-disables warp and defaults to 40ms delay. To pass the command line parameters by means of a file, create either a
+disables warp and defaults to -delay 1 (i.e. no delay). If the mouseStop flag is set, AutoRaise requires the mouse to stop
+moving for a moment before raising. Responsiveness will be lower but in return you will be able to select top menubar items
+even if there is another application 'in the way'. To pass the command line parameters by means of a file, create either a
 **~/.AutoRaise** file or a **~/.config/AutoRaise/config** file. The file format is as follows:
 
     #AutoRaise config file
@@ -41,6 +43,7 @@ disables warp and defaults to 40ms delay. To pass the command line parameters by
     warpX=0.5
     warpY=0.1
     scale=2.5
+    mouseStop=false
 
 **AutoRaise.app usage:**
 
@@ -83,19 +86,28 @@ If after checking the above you still experience the problem, I encourage you to
 in github. It will be helpful to provide (a small part of) the verbose log, which can be enabled
 like so:
 
-    ./AutoRaise -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -verbose true
+    ./AutoRaise -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -mouseStop false -verbose true
 
 The output should look something like this:
 
-    v2.8 by sbmpost(c) 2022, usage:
-    AutoRaise -delay <1=20ms, 2=40ms, ..., 0=warp only> [-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]
+    v2.9 by sbmpost(c) 2022, usage:
 
-    Started with 20 ms delay, warpX: 0.5, warpY: 0.1, scale: 2.5
-    2022-05-03 17:41:56.444 AutoRaise[60086:914615] AXIsProcessTrusted: YES
-    2022-05-03 17:41:56.465 AutoRaise[60086:914615] System cursor scale: 1.000000
-    2022-05-03 17:41:56.482 AutoRaise[60086:914615] Got run loop source: YES
-    2022-05-03 17:41:56.482 AutoRaise[60086:914615] Registered app activated selector
-    2022-05-03 17:41:56.522 AutoRaise[60086:914615] Desktop origin (0.000000, -240.000000)
+    AutoRaise
+      -delay <0=no-raise, 1=no-delay, 2=50ms, 3=100ms, ...>
+      -warpX <0.5> -warpY <0.5> -scale <2.0>
+      -mouseStop <true|false>
+      -verbose <true|false>
+
+    Started with:
+      * delay: 0ms
+      * warpX: 0.5, warpY: 0.1, scale: 2.5
+      * mouseStop: false
+      * verbose: true
+    2022-05-06 21:16:31.295 AutoRaise[34764:563770] AXIsProcessTrusted: YES
+    2022-05-06 21:16:31.322 AutoRaise[34764:563770] System cursor scale: 1.000000
+    2022-05-06 21:16:31.342 AutoRaise[34764:563770] Got run loop source: YES
+    2022-05-06 21:16:31.343 AutoRaise[34764:563770] Registered app activated selector
+    2022-05-06 21:16:31.386 AutoRaise[34764:563770] Desktop origin (-1280.000000, 0.000000)
     ...
     ...
 

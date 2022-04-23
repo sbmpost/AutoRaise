@@ -27,7 +27,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "2.7"
+#define AUTORAISE_VERSION "2.8"
 #define STACK_THRESHOLD 20
 
 // It seems OSX Monterey introduced a transparent 3 pixel border around each window. This
@@ -35,9 +35,10 @@
 // reality they are. Consequently one has to move the mouse 3 pixels further out of the
 // visual area to make the connected window raise. This new OSX 'feature' also introduces
 // unwanted raising of windows when visually connected to the top menu bar. To solve this
-// we require the mouse to be at least 5 pixels within a window boundary before raising.
+// we correct the mouse position before determining which window is underneath the mouse.
 #if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
-#define MOUSE_DISTANCE 5
+#define WINDOW_CORRECTION 3
+#define MENUBAR_CORRECTION 6
 #endif
 
 // Lowering the polling interval increases responsiveness, but steals more cpu
@@ -304,7 +305,7 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
     return contained;
 }
 
-bool inline desktop_window(AXUIElementRef _window) {
+inline bool desktop_window(AXUIElementRef _window) {
     bool desktop_window = false;
 
     AXValueRef _pos = NULL;
@@ -320,30 +321,16 @@ bool inline desktop_window(AXUIElementRef _window) {
     return desktop_window;
 }
 
-int get_mouse_distance(CGPoint point, AXUIElementRef _window) {
-    int mouse_distance = INT_MAX;
-    AXValueRef _size = nullptr;
-    AXValueRef _pos = nullptr;
-
-    AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
-    if (_size) {
-        AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
-        if (_pos) {
-            CGSize cg_size;
-            CGPoint cg_pos;
-            if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size) &&
-                AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
-                int horizontal = fmin(point.x - cg_pos.x, cg_pos.x + cg_size.width - point.x);
-                int vertical = fmin(point.y - cg_pos.y, cg_pos.y + cg_size.height - point.y);
-                mouse_distance = fmin(horizontal, vertical);
-            }
-            CFRelease(_pos);
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
+inline NSScreen * findScreen(CGPoint point) {
+    for (NSScreen * screen in [NSScreen screens]) {
+        if (NSPointInRect(NSPointFromCGPoint(point), screen.frame)) {
+            return screen;
         }
-        CFRelease(_size);
     }
-
-    return mouse_distance;
+    return NULL;
 }
+#endif
 
 //-----------------------------------------------notifications----------------------------------------------
 
@@ -630,9 +617,12 @@ void onTick() {
     CGPoint mousePoint = CGEventGetLocation(_event);
     if (_event) { CFRelease(_event); }
 
-    bool mouseMoved = fabs(mousePoint.x-oldPoint.x) > 0;
-    mouseMoved = mouseMoved || fabs(mousePoint.y-oldPoint.y) > 0;
+    float mouse_x_diff = mousePoint.x-oldPoint.x;
+    float mouse_y_diff = mousePoint.y-oldPoint.y;
     oldPoint = mousePoint;
+
+    bool mouseMoved = fabs(mouse_x_diff) > 0;
+    mouseMoved = mouseMoved || fabs(mouse_y_diff) > 0;
 
 #ifdef ALTERNATIVE_TASK_SWITCHER
     // delayCount = 0 -> warp only
@@ -672,27 +662,34 @@ void onTick() {
     // delayTicks: count down as long as the mouse doesn't move
     // raiseTimes: the window needs raising a couple of times.
     if (mouseMoved || delayTicks || raiseTimes) {
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
+        if (mouseMoved) {
+            mousePoint.x += mouse_x_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
+            mousePoint.y += mouse_y_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
+            NSScreen * screen = findScreen(mousePoint);
+            if (screen) {
+                float menuBarHeight =
+                    NSHeight(screen.frame) - NSHeight(screen.visibleFrame) -
+                    (screen.visibleFrame.origin.y - screen.frame.origin.y) - 1;
+                if (mousePoint.y < menuBarHeight + MENUBAR_CORRECTION) { mousePoint.y = 0; }
+            }
+        }
+#endif
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
         if (_mouseWindow) {
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
-                bool needs_raise = get_mouse_distance(mousePoint, _mouseWindow) >= MOUSE_DISTANCE;
-#else
                 bool needs_raise = true;
-#endif
-                if (needs_raise) {
-                    CFStringRef _mouseWindowAppTitle = NULL;
-                    AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
-                    AXUIElementCopyAttributeValue(_mouseWindowApp,
-                        kAXTitleAttribute, (CFTypeRef *) &_mouseWindowAppTitle);
-                    if (_mouseWindowAppTitle) {
-                        needs_raise = !CFEqual(_mouseWindowAppTitle, AssistiveControl);
-                        if (verbose && !needs_raise) { NSLog(@"Excluding: %@", _mouseWindowAppTitle); }
-                        CFRelease(_mouseWindowAppTitle);
-                    }
-                    CFRelease(_mouseWindowApp);
+                CFStringRef _mouseWindowAppTitle = NULL;
+                AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
+                AXUIElementCopyAttributeValue(_mouseWindowApp,
+                    kAXTitleAttribute, (CFTypeRef *) &_mouseWindowAppTitle);
+                if (_mouseWindowAppTitle) {
+                    needs_raise = !CFEqual(_mouseWindowAppTitle, AssistiveControl);
+                    if (verbose && !needs_raise) { NSLog(@"Excluding: %@", _mouseWindowAppTitle); }
+                    CFRelease(_mouseWindowAppTitle);
                 }
+                CFRelease(_mouseWindowApp);
 
                 if (needs_raise) {
                     pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]

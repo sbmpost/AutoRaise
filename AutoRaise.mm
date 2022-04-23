@@ -39,6 +39,7 @@
 #if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
 #define WINDOW_CORRECTION 3
 #define MENUBAR_CORRECTION 6
+static CGPoint oldCorrectedPoint = {0, 0};
 #endif
 
 // Lowering the polling interval increases responsiveness, but steals more cpu
@@ -673,6 +674,9 @@ void onTick() {
                     (screen.visibleFrame.origin.y - screen.frame.origin.y) - 1;
                 if (mousePoint.y < menuBarHeight + MENUBAR_CORRECTION) { mousePoint.y = 0; }
             }
+            oldCorrectedPoint = mousePoint;
+        } else {
+            mousePoint = oldCorrectedPoint;
         }
 #endif
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);

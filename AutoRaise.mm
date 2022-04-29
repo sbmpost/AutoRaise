@@ -306,23 +306,6 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
     return contained;
 }
 
-inline bool desktop_window(AXUIElementRef _window) {
-    bool desktop_window = false;
-
-    AXValueRef _pos = NULL;
-    AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
-    if (_pos) {
-        CGPoint cg_pos;
-        desktop_window = AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos) &&
-            cg_pos.x == 0 && cg_pos.y == 0; // TODO: can we do this better?
-        CFRelease(_pos);
-    }
-
-    if (verbose && desktop_window) { NSLog(@"desktop window"); }
-    return desktop_window;
-}
-
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
 inline NSScreen * findScreen(CGPoint point) {
     for (NSScreen * screen in [NSScreen screens]) {
         if (NSPointInRect(NSPointFromCGPoint(point), screen.frame)) {
@@ -331,7 +314,34 @@ inline NSScreen * findScreen(CGPoint point) {
     }
     return NULL;
 }
-#endif
+
+inline bool desktop_window(AXUIElementRef _window) {
+    bool desktop_window = false;
+
+    AXValueRef _pos = NULL;
+    AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
+    if (_pos) {
+        CGPoint cg_pos;
+        if (AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
+            NSScreen * screen = findScreen(cg_pos);
+            if (screen) {
+                CGPoint origin = {
+                    screen.frame.origin.x,
+                    NSMaxY(NSScreen.screens[0].frame) - NSMaxY(screen.frame)
+                };
+
+                desktop_window = NSEqualPoints(
+                    NSPointFromCGPoint(cg_pos),
+                    NSPointFromCGPoint(origin)
+                );
+            }
+        }
+        CFRelease(_pos);
+    }
+
+    if (verbose && desktop_window) { NSLog(@"desktop window"); }
+    return desktop_window;
+}
 
 //-----------------------------------------------notifications----------------------------------------------
 
@@ -672,7 +682,9 @@ void onTick() {
                 float menuBarHeight =
                     NSHeight(screen.frame) - NSHeight(screen.visibleFrame) -
                     (screen.visibleFrame.origin.y - screen.frame.origin.y) - 1;
-                if (mousePoint.y < menuBarHeight + MENUBAR_CORRECTION) { mousePoint.y = 0; }
+                if (mousePoint.y < menuBarHeight + MENUBAR_CORRECTION) {
+                    mousePoint.y = NSMaxY(NSScreen.screens[0].frame) - NSMaxY(screen.frame);
+                }
             }
             oldCorrectedPoint = mousePoint;
         } else {

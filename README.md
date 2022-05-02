@@ -8,9 +8,13 @@ and use the following commands to compile the binaries:
     unzip -d ~ ~/Downloads/AutoRaise-master.zip
     cd ~/AutoRaise-master && make clean && make
 
-*Note*: The warp feature works accurately with the default OSX task switcher. If you prefer an alternative task switcher and
+*Note1*: The warp feature works accurately with the default OSX task switcher. If you prefer an alternative task switcher and
 are willing to accept that in some cases you may encounter an unexpected mouse warp, then replace the above make command with:
 make clean && make CXXFLAGS=-DALTERNATIVE_TASK_SWITCHER
+
+*Note2*: There is an [experimental branch](https://github.com/sbmpost/AutoRaise/tree/7-47-focus-without-raise-experimental)
+which adds support for first focusing the hovered window before raising it (or not raising at all if -delay is set to zero).
+Refer to [this issue](https://github.com/sbmpost/AutoRaise/issues/47) for more background information.
 
 After making the project, you will get two files:
 

@@ -1,4 +1,4 @@
-override CXXFLAGS+=-O2 -Wall -fobjc-arc
+override CXXFLAGS+=-O2 -Wall -fobjc-arc -D"NS_FORMAT_ARGUMENT(A)="
 
 .PHONY: all clean install
 

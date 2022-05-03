@@ -8,7 +8,11 @@ and use the following commands to compile the binaries:
     unzip -d ~ ~/Downloads/AutoRaise-master.zip
     cd ~/AutoRaise-master && make clean && make
 
-*Note*: The warp feature works accurately with the default OSX task switcher. If you prefer an alternative task switcher and
+*Note1*: There is an [experimental branch](https://github.com/sbmpost/AutoRaise/tree/7-47-focus-without-raise-experimental)
+which adds support for first focusing the hovered window before actually raising it. Or not raising at all if the -delay setting
+equals 0. Refer to [this issue](https://github.com/sbmpost/AutoRaise/issues/47) for more information.
+
+*Note2*: The warp feature works accurately with the default OSX task switcher. If you prefer an alternative task switcher and
 are willing to accept that in some cases you may encounter an unexpected mouse warp, then replace the above make command with:
 make clean && make CXXFLAGS=-DALTERNATIVE_TASK_SWITCHER
 
@@ -83,14 +87,15 @@ like so:
 
 The output should look something like this:
 
-    v2.7 by sbmpost(c) 2022, usage:
+    v2.8 by sbmpost(c) 2022, usage:
     AutoRaise -delay <1=20ms, 2=40ms, ..., 0=warp only> [-warpX <0.5> -warpY <0.5> -scale <2.0> [-verbose <true|false>]]
 
     Started with 20 ms delay, warpX: 0.5, warpY: 0.1, scale: 2.5
-    2021-07-28 19:07:45.910 AutoRaise[978:9295] AXIsProcessTrusted: YES
-    2021-07-28 19:07:45.917 AutoRaise[978:9295] System cursor scale: 1.000000
-    2021-07-28 19:07:45.922 AutoRaise[978:9295] Got run loop source: YES
-    2021-07-28 19:07:45.922 AutoRaise[978:9295] Registered app activated selector
+    2022-05-03 17:41:56.444 AutoRaise[60086:914615] AXIsProcessTrusted: YES
+    2022-05-03 17:41:56.465 AutoRaise[60086:914615] System cursor scale: 1.000000
+    2022-05-03 17:41:56.482 AutoRaise[60086:914615] Got run loop source: YES
+    2022-05-03 17:41:56.482 AutoRaise[60086:914615] Registered app activated selector
+    2022-05-03 17:41:56.522 AutoRaise[60086:914615] Desktop origin (0.000000, -240.000000)
     ...
     ...
 

@@ -67,6 +67,7 @@ static AXUIElementRef _previousFinderWindow = NULL;
 static CFStringRef AssistiveControl = CFSTR("AssistiveControl");
 static CFStringRef Finder = CFSTR("com.apple.finder");
 static CFStringRef XQuartz = CFSTR("XQuartz");
+static CGPoint desktopOrigin = {0, 0};
 static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
 static bool appWasActivated = false;
@@ -306,13 +307,17 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
     return contained;
 }
 
-inline NSScreen * findScreen(CGPoint point) {
+CGPoint findDesktopOrigin() {
+    CGPoint origin = {0, 0};
+    float mainScreenTop = NSMaxY(NSScreen.screens[0].frame);
     for (NSScreen * screen in [NSScreen screens]) {
-        if (NSPointInRect(NSPointFromCGPoint(point), screen.frame)) {
-            return screen;
-        }
+        float screenOriginY = mainScreenTop - NSMaxY(screen.frame);
+        if (screenOriginY < origin.y) { origin.y = screenOriginY; }
+        if (screen.frame.origin.x < origin.x) { origin.x = screen.frame.origin.x; }
     }
-    return NULL;
+
+    if (verbose) { NSLog(@"Desktop origin (%f, %f)", origin.x, origin.y); }
+    return origin;
 }
 
 inline bool desktop_window(AXUIElementRef _window) {
@@ -322,26 +327,26 @@ inline bool desktop_window(AXUIElementRef _window) {
     AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
     if (_pos) {
         CGPoint cg_pos;
-        if (AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
-            NSScreen * screen = findScreen(cg_pos);
-            if (screen) {
-                CGPoint origin = {
-                    screen.frame.origin.x,
-                    NSMaxY(NSScreen.screens[0].frame) - NSMaxY(screen.frame)
-                };
-
-                desktop_window = NSEqualPoints(
-                    NSPointFromCGPoint(cg_pos),
-                    NSPointFromCGPoint(origin)
-                );
-            }
-        }
+        desktop_window = AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos) &&
+            NSEqualPoints(NSPointFromCGPoint(cg_pos), NSPointFromCGPoint(desktopOrigin));
         CFRelease(_pos);
     }
 
     if (verbose && desktop_window) { NSLog(@"desktop window"); }
     return desktop_window;
 }
+
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
+inline NSScreen * findScreen(CGPoint point) {
+    point.y = NSMaxY(NSScreen.screens[0].frame) - point.y;
+    for (NSScreen * screen in [NSScreen screens]) {
+        if (NSPointInRect(NSPointFromCGPoint(point), screen.frame)) {
+            return screen;
+        }
+    }
+    return NULL;
+}
+#endif
 
 //-----------------------------------------------notifications----------------------------------------------
 
@@ -635,6 +640,27 @@ void onTick() {
     bool mouseMoved = fabs(mouse_x_diff) > 0;
     mouseMoved = mouseMoved || fabs(mouse_y_diff) > 0;
 
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
+    if (mouseMoved) {
+        NSScreen * screen = findScreen(mousePoint);
+        mousePoint.x += mouse_x_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
+        mousePoint.y += mouse_y_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
+        if (screen) {
+            float menuBarHeight =
+                NSHeight(screen.frame) - NSHeight(screen.visibleFrame) -
+                (screen.visibleFrame.origin.y - screen.frame.origin.y) - 1;
+            float screenOriginY = NSMaxY(NSScreen.screens[0].frame) - NSMaxY(screen.frame);
+            if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
+                if (verbose) { NSLog(@"Menu bar correction"); }
+                mousePoint.y = screenOriginY;
+            }
+        }
+        oldCorrectedPoint = mousePoint;
+    } else {
+        mousePoint = oldCorrectedPoint;
+    }
+#endif
+
 #ifdef ALTERNATIVE_TASK_SWITCHER
     // delayCount = 0 -> warp only
     if (!delayCount) { return; }
@@ -673,24 +699,6 @@ void onTick() {
     // delayTicks: count down as long as the mouse doesn't move
     // raiseTimes: the window needs raising a couple of times.
     if (mouseMoved || delayTicks || raiseTimes) {
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
-        if (mouseMoved) {
-            mousePoint.x += mouse_x_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
-            mousePoint.y += mouse_y_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
-            NSScreen * screen = findScreen(mousePoint);
-            if (screen) {
-                float menuBarHeight =
-                    NSHeight(screen.frame) - NSHeight(screen.visibleFrame) -
-                    (screen.visibleFrame.origin.y - screen.frame.origin.y) - 1;
-                if (mousePoint.y < menuBarHeight + MENUBAR_CORRECTION) {
-                    mousePoint.y = NSMaxY(NSScreen.screens[0].frame) - NSMaxY(screen.frame);
-                }
-            }
-            oldCorrectedPoint = mousePoint;
-        } else {
-            mousePoint = oldCorrectedPoint;
-        }
-#endif
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
         if (_mouseWindow) {
             pid_t mouseWindow_pid;
@@ -829,6 +837,7 @@ int main(int argc, const char * argv[]) {
         }
 #endif
 
+        desktopOrigin = findDesktopOrigin();
         [[NSApplication sharedApplication] run];
     }
     return 0;

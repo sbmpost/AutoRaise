@@ -90,7 +90,7 @@ like so:
 
 The output should look something like this:
 
-    v2.9 by sbmpost(c) 2022, usage:
+    v3.0 by sbmpost(c) 2022, usage:
 
     AutoRaise
       -delay <0=no-raise, 1=no-delay, 2=50ms, 3=100ms, ...>

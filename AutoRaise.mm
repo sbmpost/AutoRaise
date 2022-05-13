@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "2.9"
+#define AUTORAISE_VERSION "3.0"
 #define STACK_THRESHOLD 20
 
 // It seems OSX Monterey introduced a transparent 3 pixel border around each window. This
@@ -39,7 +39,7 @@
 // we correct the mouse position before determining which window is underneath the mouse.
 #if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
 #define WINDOW_CORRECTION 3
-#define MENUBAR_CORRECTION 6
+#define MENUBAR_CORRECTION 7
 static CGPoint oldCorrectedPoint = {0, 0};
 #endif
 
@@ -187,7 +187,7 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int 
                 pid_t application_pid;
                 if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
                     proc_pidpath(application_pid, pathBuffer, sizeof(pathBuffer));
-                    NSLog(@"application path: %s", pathBuffer);
+                    NSLog(@"Application path: %s", pathBuffer);
                 }
             }
             CFRelease(_element);
@@ -250,9 +250,17 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int 
 
 AXUIElementRef get_mousewindow(CGPoint point) {
     AXUIElementRef _element = NULL;
-    AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
-    AXUIElementRef _window = get_raiseable_window(_element, point, 0);
+    AXError error = AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
+
+    AXUIElementRef _window = NULL;
+    if (_element) {
+        _window = get_raiseable_window(_element, point, 0);
+    } else if (error == kAXErrorCannotComplete || error == kAXErrorNotImplemented) {
+        if (verbose) { NSLog(@"App has no Accessibility API support"); } // for instance, GTK3 Apps
+        _window = fallback(point);
+    }
     if (verbose && !_window) { NSLog(@"No raisable window"); }
+
     return _window;
 }
 
@@ -577,7 +585,7 @@ bool appActivated() {
     CFRelease(_frontmostApp);
 
     CFStringRef bundleIdentifier = (__bridge CFStringRef) frontmostApp.bundleIdentifier;
-    if (verbose) { NSLog(@"bundleIdentifier: %@", bundleIdentifier); }
+    if (verbose) { NSLog(@"BundleIdentifier: %@", bundleIdentifier); }
     bool finder_app = bundleIdentifier && CFEqual(bundleIdentifier, Finder);
     if (finder_app) {
         if (_activatedWindow) {

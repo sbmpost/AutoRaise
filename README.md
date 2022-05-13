@@ -2,21 +2,35 @@ When you hover a window it will be raised to the front (with a delay of your cho
 option to warp the mouse to the center of the activated window when using the cmd-tab key combination. See also
 https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x
 
+**Compiling AutoRaise**
+
 To use AutoRaise, download the master branch from [here](https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip)
 and use the following commands to compile the binaries:
 
     unzip -d ~ ~/Downloads/AutoRaise-master.zip
     cd ~/AutoRaise-master && make clean && make
 
-*Note1*: There is an [experimental branch](https://github.com/sbmpost/AutoRaise/tree/7-47-focus-without-raise-experimental)
-which adds support for first focusing the hovered window before actually raising it. Or not raising at all if the -delay setting
-equals 0. Refer to [this issue](https://github.com/sbmpost/AutoRaise/issues/47) for more information.
+**Advanced compilation options**
 
-*Note2*: The warp feature works accurately with the default OSX task switcher. If you prefer an alternative task switcher and
-are willing to accept that in some cases you may encounter an unexpected mouse warp, then replace the above make command with:
-make clean && make CXXFLAGS=-DALTERNATIVE_TASK_SWITCHER
+  * ALTERNATIVE_TASK_SWITCHER: The warp feature works accurately with the default OSX task switcher. Enable the alternative
+  task switcher flag if you use an alternative task switcher and are willing to accept that in some cases you may encounter
+  an unexpected mouse warp.
 
-After making the project, you will get two files:
+  * OLD_ACTIVATION_METHOD: Enable this flag if one of your applications is not raising properly. This can happen if the
+  application uses a non native graphic technology like GTK or SDL. It could also be a [wine](https://www.winehq.org) application.
+  Note this will introduce a deprecation warning.
+
+  * EXPERIMENTAL_FOCUS_FIRST: Enabling this flag adds support for first focusing the hovered window before actually raising it.
+  Or not raising at all if the -delay setting equals 0. This is an experimental feature. It relies on undocumented private API
+  calls. *As such there is absolutely no guarantee it will be supported in future OSX versions*.
+
+Example advanced compilation command:
+
+    make CXXFLAGS="-DOLD_ACTIVATION_METHOD -DEXPERIMENTAL_FOCUS_FIRST"
+
+**Running AutoRaise**
+
+After making the project, you end up with these two files:
 
     AutoRaise
     AutoRaise.app
@@ -79,8 +93,9 @@ If you experience any issues, it is suggested to first check these points:
 - Does it work with the command line version?
 - Are you running other mouse tools that might intervene with AutoRaise?
 - Are you running two AutoRaise instances at the same time? Use "Activity Monitor" to check this.
-- Is Accessibility properly enabled? To be absolutely sure, toggle **off** and **on** access
-for AutoRaise in the System Preferences|Security & Privacy|Privacy|Accessibility pane.
+- Is Accessibility properly enabled? To be absolutely sure, remove any previous AutoRaise items
+that may be present in the System Preferences|Security & Privacy|Privacy|Accessibility pane. Then
+start AutoRaise and enable accessibility again.
 
 If after checking the above you still experience the problem, I encourage you to create an issue
 in github. It will be helpful to provide (a small part of) the verbose log, which can be enabled
@@ -90,7 +105,7 @@ like so:
 
 The output should look something like this:
 
-    v2.9 by sbmpost(c) 2022, usage:
+    v3.0 by sbmpost(c) 2022, usage:
 
     AutoRaise
       -delay <0=no-raise, 1=no-delay, 2=50ms, 3=100ms, ...>
@@ -103,11 +118,17 @@ The output should look something like this:
       * warpX: 0.5, warpY: 0.1, scale: 2.5
       * mouseStop: false
       * verbose: true
-    2022-05-06 21:16:31.295 AutoRaise[34764:563770] AXIsProcessTrusted: YES
-    2022-05-06 21:16:31.322 AutoRaise[34764:563770] System cursor scale: 1.000000
-    2022-05-06 21:16:31.342 AutoRaise[34764:563770] Got run loop source: YES
-    2022-05-06 21:16:31.343 AutoRaise[34764:563770] Registered app activated selector
-    2022-05-06 21:16:31.386 AutoRaise[34764:563770] Desktop origin (-1280.000000, 0.000000)
+
+    Compiled with:
+      * OLD_ACTIVATION_METHOD
+      * EXPERIMENTAL_FOCUS_FIRST
+      * ALTERNATIVE_TASK_SWITCHER
+
+    2022-05-16 17:55:02.169 AutoRaise[57228:908941] AXIsProcessTrusted: YES
+    2022-05-16 17:55:02.190 AutoRaise[57228:908941] System cursor scale: 1.000000
+    2022-05-16 17:55:02.208 AutoRaise[57228:908941] Got run loop source: YES
+    2022-05-16 17:55:02.209 AutoRaise[57228:908941] Registered app activated selector
+    2022-05-16 17:55:02.251 AutoRaise[57228:908941] Desktop origin (-1280.000000, 0.000000)
     ...
     ...
 

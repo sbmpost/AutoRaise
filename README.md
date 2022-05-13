@@ -79,8 +79,13 @@ If you experience any issues, it is suggested to first check these points:
 - Does it work with the command line version?
 - Are you running other mouse tools that might intervene with AutoRaise?
 - Are you running two AutoRaise instances at the same time? Use "Activity Monitor" to check this.
-- Is Accessibility properly enabled? To be absolutely sure, toggle **off** and **on** access
-for AutoRaise in the System Preferences|Security & Privacy|Privacy|Accessibility pane.
+- Is Accessibility properly enabled? To be absolutely sure, remove any previous AutoRaise items
+that may be present in the System Preferences|Security & Privacy|Privacy|Accessibility pane. Then
+start AutoRaise and enable accessibility again.
+- If just one of your applications does not raise properly it might be using a non native graphic
+technology like GTK or SDL. It could also be a [wine](https://www.winehq.org) application. If you
+suspect this to be the case, try compiling AutoRaise with: make CXXFLAGS=-DOLD_ACTIVATION_METHOD.
+Note this will introduce a deprecation warning.
 
 If after checking the above you still experience the problem, I encourage you to create an issue
 in github. It will be helpful to provide (a small part of) the verbose log, which can be enabled

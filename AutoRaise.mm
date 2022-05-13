@@ -87,15 +87,16 @@ static int delayCount = 0;
 //---------------------------------------------helper methods-----------------------------------------------
 
 inline void activate(pid_t pid) {
-    if (verbose) { NSLog(@"Activate"); }
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_11_6
-    [[NSRunningApplication runningApplicationWithProcessIdentifier: pid]
-        activateWithOptions: NSApplicationActivateIgnoringOtherApps];
-#else
+#if MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_11_6 or OLD_ACTIVATION_METHOD
     // Temporary solution as NSRunningApplication does not work properly on OSX 11.1
+    if (verbose) { NSLog(@"Activate (old method)"); }
     ProcessSerialNumber process;
     OSStatus error = GetProcessForPID(pid, &process);
     if (!error) { SetFrontProcessWithOptions(&process, kSetFrontProcessFrontWindowOnly); }
+#else
+    if (verbose) { NSLog(@"Activate"); }
+    [[NSRunningApplication runningApplicationWithProcessIdentifier: pid]
+        activateWithOptions: NSApplicationActivateIgnoringOtherApps];
 #endif
 }
 

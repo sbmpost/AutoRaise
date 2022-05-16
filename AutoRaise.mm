@@ -28,8 +28,22 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "2.9"
+#define AUTORAISE_VERSION "3.0"
 #define STACK_THRESHOLD 20
+
+#define __MAC_11_06_0 110600
+#define __MAC_12_00_0 120000
+
+#ifdef EXPERIMENTAL_FOCUS_FIRST
+#if SKYLIGHT_AVAILABLE
+// Focus first is an experimental feature that can break easily across different OSX
+// versions. It relies on the private Skylight api. As such, there are absolutely no
+// guarantees that this feature will keep on working in future versions of AutoRaise.
+#define FOCUS_FIRST
+#else
+#pragma message "Skylight api is unavailable, Focus First is disabled"
+#endif
+#endif
 
 // It seems OSX Monterey introduced a transparent 3 pixel border around each window. This
 // means that when two windows are visually precisely connected and not overlapping, in
@@ -37,9 +51,9 @@
 // visual area to make the connected window raise. This new OSX 'feature' also introduces
 // unwanted raising of windows when visually connected to the top menu bar. To solve this
 // we correct the mouse position before determining which window is underneath the mouse.
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_12_00_0
 #define WINDOW_CORRECTION 3
-#define MENUBAR_CORRECTION 6
+#define MENUBAR_CORRECTION 7
 static CGPoint oldCorrectedPoint = {0, 0};
 #endif
 
@@ -54,6 +68,22 @@ static CGPoint oldCorrectedPoint = {0, 0};
 #define SCALE_DELAY_MS 400 // The moment the mouse scaling should start, feel free to modify.
 #define SCALE_DURATION_MS (SCALE_DELAY_MS+600) // Mouse scale duration, feel free to modify.
 
+#ifdef FOCUS_FIRST
+#define kCPSUserGenerated 0x200
+extern "C" CGError SLPSPostEventRecordTo(ProcessSerialNumber *psn, uint8_t *bytes);
+extern "C" CGError _SLPSSetFrontProcessWithOptions(
+  ProcessSerialNumber *psn, uint32_t wid, uint32_t mode);
+
+/* -----------Could these be a replacement for GetProcessForPID?-----------
+extern "C" int SLSMainConnectionID(void);
+extern "C" CGError SLSGetWindowOwner(int cid, uint32_t wid, int *wcid);
+extern "C" CGError SLSGetConnectionPSN(int cid, ProcessSerialNumber *psn);
+int element_connection;
+SLSGetWindowOwner(SLSMainConnectionID(), window_id, &element_connection);
+SLSGetConnectionPSN(element_connection, &window_psn);
+-------------------------------------------------------------------------*/
+#endif
+
 typedef int CGSConnectionID;
 extern "C" CGSConnectionID CGSMainConnectionID(void);
 extern "C" CGError CGSSetCursorScale(CGSConnectionID connectionId, float scale);
@@ -61,10 +91,18 @@ extern "C" CGError CGSGetCursorScale(CGSConnectionID connectionId, float *scale)
 extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
 // Above methods are undocumented and subjective to incompatible changes
 
+#ifdef FOCUS_FIRST
+static pid_t lastFocusedWindow_pid;
+static AXUIElementRef _lastFocusedWindow = NULL;
+#endif
+
 static char pathBuffer[PROC_PIDPATHINFO_MAXSIZE];
 static bool activated_by_task_switcher = false;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
+static AXUIElementRef _dock_app = NULL;
+static CFStringRef Dock = CFSTR("com.apple.dock");
+static CFStringRef Launchpad = CFSTR("Launchpad");
 static CFStringRef AssistiveControl = CFSTR("AssistiveControl");
 static CFStringRef Finder = CFSTR("com.apple.finder");
 static CFStringRef XQuartz = CFSTR("XQuartz");
@@ -84,18 +122,69 @@ static int raiseTimes = 0;
 static int delayTicks = 0;
 static int delayCount = 0;
 
+//----------------------------------------yabai focus only methods------------------------------------------
+
+#ifdef FOCUS_FIRST
+// The two methods below, starting with "window_manager" were copied from
+// https://github.com/koekeishiya/yabai and slightly modified. See also:
+// https://github.com/Hammerspoon/hammerspoon/issues/370#issuecomment-545545468
+void window_manager_make_key_window(ProcessSerialNumber * _window_psn, uint32_t window_id) {
+    uint8_t bytes1[0xf8] = { [0x04] = 0xf8, [0x08] = 0x01, [0x3a] = 0x10 };
+    uint8_t bytes2[0xf8] = { [0x04] = 0xf8, [0x08] = 0x02, [0x3a] = 0x10 };
+
+    memcpy(bytes1 + 0x3c, &window_id, sizeof(uint32_t));
+    memset(bytes1 + 0x20, 0xFF, 0x10);
+
+    memcpy(bytes2 + 0x3c, &window_id, sizeof(uint32_t));
+    memset(bytes2 + 0x20, 0xFF, 0x10);
+
+    SLPSPostEventRecordTo(_window_psn, bytes1);
+    SLPSPostEventRecordTo(_window_psn, bytes2);
+}
+
+void window_manager_focus_window_without_raise(
+    ProcessSerialNumber * _window_psn, uint32_t window_id,
+    ProcessSerialNumber * _focused_window_psn, uint32_t focused_window_id
+) {
+    if (verbose) { NSLog(@"Focus"); }
+    if (_focused_window_psn) {
+        Boolean same_process;
+        SameProcess(_window_psn, _focused_window_psn, &same_process);
+        if (same_process) {
+            if (verbose) { NSLog(@"Same process"); }
+            uint8_t bytes1[0xf8] = { [0x04] = 0xf8, [0x08] = 0x0d, [0x8a] = 0x02 };
+            memcpy(bytes1 + 0x3c, &focused_window_id, sizeof(uint32_t));
+            SLPSPostEventRecordTo(_focused_window_psn, bytes1);
+
+            // @hack
+            // Artificially delay the activation by 1ms. This is necessary
+            // because some applications appear to be confused if both of
+            // the events appear instantaneously.
+            usleep(10000);
+
+            uint8_t bytes2[0xf8] = { [0x04] = 0xf8, [0x08] = 0x0d, [0x8a] = 0x01 };
+            memcpy(bytes2 + 0x3c, &window_id, sizeof(uint32_t));
+            SLPSPostEventRecordTo(_window_psn, bytes2);
+        }
+    }
+
+    _SLPSSetFrontProcessWithOptions(_window_psn, window_id, kCPSUserGenerated);
+    window_manager_make_key_window(_window_psn, window_id);
+}
+#endif
+
 //---------------------------------------------helper methods-----------------------------------------------
 
 inline void activate(pid_t pid) {
     if (verbose) { NSLog(@"Activate"); }
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_11_6
-    [[NSRunningApplication runningApplicationWithProcessIdentifier: pid]
-        activateWithOptions: NSApplicationActivateIgnoringOtherApps];
-#else
+#if MAC_OS_X_VERSION_MIN_REQUIRED < __MAC_11_06_0 or OLD_ACTIVATION_METHOD
     // Temporary solution as NSRunningApplication does not work properly on OSX 11.1
     ProcessSerialNumber process;
     OSStatus error = GetProcessForPID(pid, &process);
     if (!error) { SetFrontProcessWithOptions(&process, kSetFrontProcessFrontWindowOnly); }
+#else
+    [[NSRunningApplication runningApplicationWithProcessIdentifier: pid]
+        activateWithOptions: NSApplicationActivateIgnoringOtherApps];
 #endif
 }
 
@@ -179,6 +268,28 @@ AXUIElementRef fallback(CGPoint point) {
     return _window;
 }
 
+inline bool launchpad_active() {
+    bool active = false;
+    CFArrayRef _children = NULL;
+    AXUIElementCopyAttributeValue(_dock_app, kAXVisibleChildrenAttribute, (CFTypeRef *) &_children);
+    if (_children) {
+        CFIndex count = CFArrayGetCount(_children);
+        for (CFIndex i=0;!active && i != count;i++) {
+            CFStringRef _element_role = NULL;
+            AXUIElementRef _element = (AXUIElementRef) CFArrayGetValueAtIndex(_children, i);
+            AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
+            if (_element_role) {
+                active = CFEqual(_element_role, kAXGroupRole) && titleEquals(_element, Launchpad);
+                CFRelease(_element_role);
+            }
+        }
+        CFRelease(_children);
+    }
+
+    if (verbose && active) { NSLog(@"Launchpad is active"); }
+    return active;
+}
+
 AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int count) {
     if (_element) {
         if (count >= STACK_THRESHOLD) {
@@ -187,7 +298,7 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int 
                 pid_t application_pid;
                 if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
                     proc_pidpath(application_pid, pathBuffer, sizeof(pathBuffer));
-                    NSLog(@"application path: %s", pathBuffer);
+                    NSLog(@"Application path: %s", pathBuffer);
                 }
             }
             CFRelease(_element);
@@ -250,8 +361,16 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int 
 
 AXUIElementRef get_mousewindow(CGPoint point) {
     AXUIElementRef _element = NULL;
-    AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
-    AXUIElementRef _window = get_raiseable_window(_element, point, 0);
+    AXError error = AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
+
+    AXUIElementRef _window = NULL;
+    if (_element) {
+        _window = get_raiseable_window(_element, point, 0);
+    } else if (error == kAXErrorCannotComplete || error == kAXErrorNotImplemented) {
+        if (verbose) { NSLog(@"App has no Accessibility API support"); } // for instance, GTK3 Apps
+        _window = fallback(point);
+    }
+
     if (verbose && !_window) { NSLog(@"No raisable window"); }
     return _window;
 }
@@ -318,9 +437,25 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
     return contained;
 }
 
+AXUIElementRef findDockApplication() {
+    AXUIElementRef _dock = NULL;
+    NSArray * _apps = [[NSWorkspace sharedWorkspace] runningApplications];
+    for (NSRunningApplication * app in _apps) {
+        CFStringRef bundleIdentifier = (__bridge CFStringRef) app.bundleIdentifier;
+        if (bundleIdentifier && CFEqual(bundleIdentifier, Dock)) {
+            _dock = AXUIElementCreateApplication(app.processIdentifier);
+            break;
+        }
+    }
+
+    if (verbose && !_dock) { NSLog(@"Dock application isn't running"); }
+    return _dock;
+}
+
 CGPoint findDesktopOrigin() {
     CGPoint origin = {0, 0};
-    float mainScreenTop = NSMaxY(NSScreen.screens[0].frame);
+    NSScreen * main_screen = NSScreen.screens[0];
+    float mainScreenTop = NSMaxY(main_screen.frame);
     for (NSScreen * screen in [NSScreen screens]) {
         float screenOriginY = mainScreenTop - NSMaxY(screen.frame);
         if (screenOriginY < origin.y) { origin.y = screenOriginY; }
@@ -346,9 +481,25 @@ inline bool desktop_window(AXUIElementRef _window) {
     return desktop_window;
 }
 
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
+#ifdef FOCUS_FIRST
+inline bool main_window(AXUIElementRef _window) {
+    bool main_window = false;
+    CFBooleanRef _result = NULL;
+    AXUIElementCopyAttributeValue(_window, kAXMainAttribute, (CFTypeRef *) &_result);
+    if (_result) {
+        main_window = CFEqual(_result, kCFBooleanTrue);
+        CFRelease(_result);
+    }
+
+    if (verbose && !main_window) { NSLog(@"Not a main window"); }
+    return main_window;
+}
+#endif
+
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_12_00_0
 inline NSScreen * findScreen(CGPoint point) {
-    point.y = NSMaxY(NSScreen.screens[0].frame) - point.y;
+    NSScreen * main_screen = NSScreen.screens[0];
+    point.y = NSMaxY(main_screen.frame) - point.y;
     for (NSScreen * screen in [NSScreen screens]) {
         if (NSPointInRect(NSPointFromCGPoint(point), screen.frame)) {
             return screen;
@@ -367,6 +518,8 @@ void onTick();
 @interface MDWorkspaceWatcher:NSObject {}
 - (id)init;
 @end
+
+static MDWorkspaceWatcher * workspaceWatcher = NULL;
 
 @implementation MDWorkspaceWatcher
 - (id)init {
@@ -428,6 +581,21 @@ void onTick();
         afterDelay: timerInterval.floatValue];
     onTick();
 }
+
+#ifdef FOCUS_FIRST
+- (void)windowFocused:(AXUIElementRef)_window {
+    if (verbose) { NSLog(@"Window focused, waiting %0.3fs", delayCount*POLLING_MS/1000.0); }
+    [self performSelector: @selector(onWindowFocused:)
+        withObject: [NSNumber numberWithUnsignedLong: (uint64_t) _window]
+        afterDelay: delayCount*POLLING_MS/1000.0];
+}
+
+- (void)onWindowFocused:(NSNumber *)_window {
+    if (_window.unsignedLongValue == (uint64_t) _lastFocusedWindow) {
+        raiseAndActivate(_lastFocusedWindow, lastFocusedWindow_pid);
+    } else if (verbose) { NSLog(@"Ignoring window focused event"); }
+}
+#endif
 @end // MDWorkspaceWatcher
 
 //----------------------------------------------configuration-----------------------------------------------
@@ -577,7 +745,7 @@ bool appActivated() {
     CFRelease(_frontmostApp);
 
     CFStringRef bundleIdentifier = (__bridge CFStringRef) frontmostApp.bundleIdentifier;
-    if (verbose) { NSLog(@"bundleIdentifier: %@", bundleIdentifier); }
+    if (verbose) { NSLog(@"BundleIdentifier: %@", bundleIdentifier); }
     bool finder_app = bundleIdentifier && CFEqual(bundleIdentifier, Finder);
     if (finder_app) {
         if (_activatedWindow) {
@@ -651,7 +819,9 @@ void onTick() {
     bool mouseMoved = fabs(mouse_x_diff) > 0;
     mouseMoved = mouseMoved || fabs(mouse_y_diff) > 0;
 
-#ifdef ALTERNATIVE_TASK_SWITCHER
+#ifdef FOCUS_FIRST
+    if (mouseMoved) { delayTicks = 1; }
+#elif defined ALTERNATIVE_TASK_SWITCHER
     // delayCount = 0 -> warp only
     if (!delayCount) { return; }
 #endif
@@ -661,7 +831,7 @@ void onTick() {
     // delayTicks = n -> delay started
     if (delayTicks > 1) { delayTicks--; }
 
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_12_0
+#if MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_12_00_0
     // the correction should be applied before we return
     // under certain conditions in the code after it. This
     // ensures oldCorrectedPoint always has a recent value.
@@ -673,7 +843,8 @@ void onTick() {
             float menuBarHeight =
                 NSHeight(screen.frame) - NSHeight(screen.visibleFrame) -
                 (screen.visibleFrame.origin.y - screen.frame.origin.y) - 1;
-            float screenOriginY = NSMaxY(NSScreen.screens[0].frame) - NSMaxY(screen.frame);
+            NSScreen * main_screen = NSScreen.screens[0];
+            float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
             if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
                 if (verbose) { NSLog(@"Menu bar correction"); }
                 mousePoint.y = screenOriginY;
@@ -695,38 +866,57 @@ void onTick() {
         raiseTimes = 3;
         delayTicks = 0;
         spaceHasChanged = false;
+#ifndef FOCUS_FIRST
     } else if (delayTicks && mouseMoved) {
         delayTicks = 0;
         // propagate the mouseMoved event
         // to restart the delay if needed
         oldPoint.x = oldPoint.y = 0;
         return;
-    }
-
-    // don't raise for as long as something is being dragged (resizing a window for instance)
-    if (CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft) ||
-        CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight)) {
-        return;
+#endif
     }
 
     // mouseMoved: we have to decide if the window needs raising
     // delayTicks: count down as long as the mouse doesn't move
     // raiseTimes: the window needs raising a couple of times.
     if (mouseMoved || delayTicks || raiseTimes) {
+        // don't raise for as long as something is being dragged (resizing a window for instance)
+        if (CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft) ||
+            CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight)) {
+            return;
+        } else if (launchpad_active()) {
+            return;
+        }
+
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
         if (_mouseWindow) {
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
                 bool needs_raise = true;
 
-                AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
-                if (titleEquals(_mouseWindowApp, AssistiveControl)) {
+                if (titleEquals(_mouseWindow, NoTitle)) {
                     needs_raise = false;
-                    if (verbose) { NSLog(@"Excluding app"); }
+                    if (verbose) { NSLog(@"Excluding window"); }
                 }
-                CFRelease(_mouseWindowApp);
 
                 if (needs_raise) {
+                    AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
+                    if (titleEquals(_mouseWindowApp, AssistiveControl)) {
+                        needs_raise = false;
+                        if (verbose) { NSLog(@"Excluding app"); }
+                    }
+                    CFRelease(_mouseWindowApp);
+                }
+
+                CGWindowID mouseWindow_id;
+                CGWindowID focusedWindow_id;
+#ifdef FOCUS_FIRST
+                ProcessSerialNumber mouseWindow_psn;
+                ProcessSerialNumber focusedWindow_psn;
+                ProcessSerialNumber * _focusedWindow_psn = NULL;
+#endif
+                if (needs_raise) {
+                    _AXUIElementGetWindow(_mouseWindow, &mouseWindow_id);
                     pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
                         frontmostApplication] processIdentifier];
                     AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
@@ -737,11 +927,19 @@ void onTick() {
                             kAXFocusedWindowAttribute,
                             (CFTypeRef *) &_focusedWindow);
                         if (_focusedWindow) {
-                            CGWindowID window1_id, window2_id;
-                            _AXUIElementGetWindow(_mouseWindow, &window1_id);
-                            _AXUIElementGetWindow(_focusedWindow, &window2_id);
-                            needs_raise = window1_id != window2_id &&
-                                !contained_within(_focusedWindow, _mouseWindow);
+                            _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
+                            needs_raise = mouseWindow_id != focusedWindow_id;
+                            if (needs_raise) {
+#ifdef FOCUS_FIRST
+                                needs_raise = main_window(_focusedWindow);
+                                if (needs_raise) {
+                                    OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
+                                    if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
+                                }
+#else
+                                needs_raise = !contained_within(_focusedWindow, _mouseWindow);
+#endif
+                            }
                             CFRelease(_focusedWindow);
                         }
                         CFRelease(_frontmostApp);
@@ -760,9 +958,24 @@ void onTick() {
                         if (raiseTimes && readyForRaise) { raiseTimes--; }
                         else { raiseTimes = 3; }
 
-                        // raise mousewindow
                         if (readyForRaise) {
-                            raiseAndActivate(_mouseWindow, mouseWindow_pid);
+#ifdef FOCUS_FIRST
+                            if (delayCount != 1) {
+                                OSStatus error = GetProcessForPID(mouseWindow_pid, &mouseWindow_psn);
+                                if (!error) {
+                                    window_manager_focus_window_without_raise(&mouseWindow_psn,
+                                        mouseWindow_id, _focusedWindow_psn, focusedWindow_id);
+                                    if (_lastFocusedWindow) { CFRelease(_lastFocusedWindow); }
+                                    _lastFocusedWindow = _mouseWindow;
+                                    lastFocusedWindow_pid = mouseWindow_pid;
+                                    if (delayCount) { [workspaceWatcher windowFocused: _lastFocusedWindow]; }
+                                }
+                            } else {
+#endif
+                                raiseAndActivate(_mouseWindow, mouseWindow_pid);
+#ifdef FOCUS_FIRST
+                            }
+#endif
                         }
                     }
                 } else {
@@ -770,7 +983,13 @@ void onTick() {
                     delayTicks = 0;
                 }
             }
-            CFRelease(_mouseWindow);
+#ifdef FOCUS_FIRST
+            if (_mouseWindow != _lastFocusedWindow) {
+#endif
+                CFRelease(_mouseWindow);
+#ifdef FOCUS_FIRST
+            }
+#endif
         } else {
             raiseTimes = 0;
             delayTicks = 0;
@@ -817,17 +1036,34 @@ int main(int argc, const char * argv[]) {
         if (delayCount) {
             printf("  * delay: %dms\n", (delayCount-1)*POLLING_MS);
         } else {
+#ifdef FOCUS_FIRST
+            printf("  * warp and focus only (no-raise)\n");
+#else
             printf("  * warp only (no-raise)\n");
+#endif
         }
         if (warpMouse) {
             printf("  * warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale);
         }
-
-        if (delayCount) { printf("  * mouseStop: %s\n", mouseStop ? "true" : "false"); }
-        printf("  * verbose: %s\n", verbose ? "true" : "false");
-#ifdef ALTERNATIVE_TASK_SWITCHER
-        printf("  * alternative task switcher\n");
+#ifndef FOCUS_FIRST
+        if (delayCount) {
 #endif
+            printf("  * mouseStop: %s\n", mouseStop ? "true" : "false");
+#ifndef FOCUS_FIRST
+        }
+#endif
+        printf("  * verbose: %s\n", verbose ? "true" : "false");
+        printf("\nCompiled with:\n");
+#ifdef OLD_ACTIVATION_METHOD
+        printf("  * OLD_ACTIVATION_METHOD\n");
+#endif
+#ifdef FOCUS_FIRST
+        printf("  * EXPERIMENTAL_FOCUS_FIRST\n");
+#endif
+#ifdef ALTERNATIVE_TASK_SWITCHER
+        printf("  * ALTERNATIVE_TASK_SWITCHER\n");
+#endif
+        printf("\n");
 
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
         bool trusted = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);
@@ -848,15 +1084,16 @@ int main(int argc, const char * argv[]) {
         }
         if (verbose) { NSLog(@"Got run loop source: %s", runLoopSource ? "YES" : "NO"); }
 
-        MDWorkspaceWatcher * workspaceWatcher = [[MDWorkspaceWatcher alloc] init];
-#ifndef ALTERNATIVE_TASK_SWITCHER
+        workspaceWatcher = [[MDWorkspaceWatcher alloc] init];
+#if !defined ALTERNATIVE_TASK_SWITCHER and !defined FOCUS_FIRST
         if (delayCount) {
 #endif
         [workspaceWatcher onTick: [NSNumber numberWithFloat: POLLING_MS/1000.0]];
-#ifndef ALTERNATIVE_TASK_SWITCHER
+#if !defined ALTERNATIVE_TASK_SWITCHER and !defined FOCUS_FIRST
         }
 #endif
 
+        _dock_app = findDockApplication();
         desktopOrigin = findDesktopOrigin();
         [[NSApplication sharedApplication] run];
     }

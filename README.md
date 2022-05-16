@@ -26,7 +26,7 @@ and use the following commands to compile the binaries:
 
 Example advanced compilation command:
 
-    make CXXFLAGS="-DOLD_ACTIVATION_METHOD -DEXPERIMENTAL_FOCUS_FIRST"
+    make CXXFLAGS="-DOLD_ACTIVATION_METHOD -EXPERIMENTAL_FOCUS_FIRST"
 
 **Running AutoRaise**
 

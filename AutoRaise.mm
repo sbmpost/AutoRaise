@@ -101,12 +101,13 @@ static bool activated_by_task_switcher = false;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
-static CFStringRef Dock = CFSTR("com.apple.dock");
-static CFStringRef Launchpad = CFSTR("Launchpad");
-static CFStringRef AssistiveControl = CFSTR("AssistiveControl");
-static CFStringRef Finder = CFSTR("com.apple.finder");
-static CFStringRef XQuartz = CFSTR("XQuartz");
-static CFStringRef NoTitle = CFSTR("");
+static NSString * Dock = @"com.apple.dock";
+static NSString * Finder = @"com.apple.finder";
+static NSString * AssistiveControl = @"AssistiveControl";
+static NSString * BartenderBar = @"Bartender Bar";
+static NSString * Launchpad = @"Launchpad";
+static NSString * XQuartz = @"XQuartz";
+static NSString * NoTitle = @"";
 static CGPoint desktopOrigin = {0, 0};
 static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
@@ -195,14 +196,14 @@ inline void raiseAndActivate(AXUIElementRef _window, pid_t window_pid) {
     }
 }
 
-inline bool titleEquals(AXUIElementRef _element, CFStringRef _title) {
+inline bool titleEquals(AXUIElementRef _element, NSArray * _titles) {
     bool equal = false;
     CFStringRef _elementTitle = NULL;
     AXUIElementCopyAttributeValue(_element, kAXTitleAttribute, (CFTypeRef *) &_elementTitle);
     if (_elementTitle) {
-        equal = CFEqual(_elementTitle, _title);
+        equal = [_titles containsObject: (__bridge NSString *) _elementTitle];
         CFRelease(_elementTitle);
-    } else { equal = CFEqual(_title, NoTitle); }
+    } else { equal = [_titles containsObject: NoTitle]; }
     return equal;
 }
 
@@ -279,7 +280,7 @@ inline bool launchpad_active() {
             AXUIElementRef _element = (AXUIElementRef) CFArrayGetValueAtIndex(_children, i);
             AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
             if (_element_role) {
-                active = CFEqual(_element_role, kAXGroupRole) && titleEquals(_element, Launchpad);
+                active = CFEqual(_element_role, kAXGroupRole) && titleEquals(_element, @[Launchpad]);
                 CFRelease(_element_role);
             }
         }
@@ -321,7 +322,7 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int 
                 return _element;
             } else if (CFEqual(_element_role, kAXApplicationRole)) {
                 CFRelease(_element_role);
-                bool xquartz = titleEquals(_element, XQuartz);
+                bool xquartz = titleEquals(_element, @[XQuartz]);
                 if (xquartz) {
                     pid_t application_pid;
                     if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
@@ -441,8 +442,7 @@ AXUIElementRef findDockApplication() {
     AXUIElementRef _dock = NULL;
     NSArray * _apps = [[NSWorkspace sharedWorkspace] runningApplications];
     for (NSRunningApplication * app in _apps) {
-        CFStringRef bundleIdentifier = (__bridge CFStringRef) app.bundleIdentifier;
-        if (bundleIdentifier && CFEqual(bundleIdentifier, Dock)) {
+        if ([app.bundleIdentifier isEqualToString: Dock]) {
             _dock = AXUIElementCreateApplication(app.processIdentifier);
             break;
         }
@@ -744,9 +744,8 @@ bool appActivated() {
     }
     CFRelease(_frontmostApp);
 
-    CFStringRef bundleIdentifier = (__bridge CFStringRef) frontmostApp.bundleIdentifier;
-    if (verbose) { NSLog(@"BundleIdentifier: %@", bundleIdentifier); }
-    bool finder_app = bundleIdentifier && CFEqual(bundleIdentifier, Finder);
+    if (verbose) { NSLog(@"BundleIdentifier: %@", frontmostApp.bundleIdentifier); }
+    bool finder_app = [frontmostApp.bundleIdentifier isEqualToString: Finder];
     if (finder_app) {
         if (_activatedWindow) {
             if (desktop_window(_activatedWindow)) {
@@ -894,14 +893,14 @@ void onTick() {
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
                 bool needs_raise = true;
 
-                if (titleEquals(_mouseWindow, NoTitle)) {
+                if (titleEquals(_mouseWindow, @[NoTitle, BartenderBar])) {
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }
                 }
 
                 if (needs_raise) {
                     AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
-                    if (titleEquals(_mouseWindowApp, AssistiveControl)) {
+                    if (titleEquals(_mouseWindowApp, @[AssistiveControl])) {
                         needs_raise = false;
                         if (verbose) { NSLog(@"Excluding app"); }
                     }

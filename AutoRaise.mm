@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "3.0"
+#define AUTORAISE_VERSION "3.1"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -101,12 +101,13 @@ static bool activated_by_task_switcher = false;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
-static CFStringRef Dock = CFSTR("com.apple.dock");
-static CFStringRef Launchpad = CFSTR("Launchpad");
-static CFStringRef AssistiveControl = CFSTR("AssistiveControl");
-static CFStringRef Finder = CFSTR("com.apple.finder");
-static CFStringRef XQuartz = CFSTR("XQuartz");
-static CFStringRef NoTitle = CFSTR("");
+static const NSString * Dock = @"com.apple.dock";
+static const NSString * Finder = @"com.apple.finder";
+static const NSString * AssistiveControl = @"AssistiveControl";
+static const NSString * BartenderBar = @"Bartender Bar";
+static const NSString * Launchpad = @"Launchpad";
+static const NSString * XQuartz = @"XQuartz";
+static const NSString * NoTitle = @"";
 static CGPoint desktopOrigin = {0, 0};
 static CGPoint oldPoint = {0, 0};
 static bool spaceHasChanged = false;
@@ -195,14 +196,14 @@ inline void raiseAndActivate(AXUIElementRef _window, pid_t window_pid) {
     }
 }
 
-inline bool titleEquals(AXUIElementRef _element, CFStringRef _title) {
+inline bool titleEquals(AXUIElementRef _element, NSArray * _titles) {
     bool equal = false;
     CFStringRef _elementTitle = NULL;
     AXUIElementCopyAttributeValue(_element, kAXTitleAttribute, (CFTypeRef *) &_elementTitle);
     if (_elementTitle) {
-        equal = CFEqual(_elementTitle, _title);
+        equal = [_titles containsObject: (__bridge NSString *) _elementTitle];
         CFRelease(_elementTitle);
-    } else { equal = CFEqual(_title, NoTitle); }
+    } else { equal = [_titles containsObject: NoTitle]; }
     return equal;
 }
 
@@ -271,7 +272,7 @@ AXUIElementRef fallback(CGPoint point) {
 inline bool launchpad_active() {
     bool active = false;
     CFArrayRef _children = NULL;
-    AXUIElementCopyAttributeValue(_dock_app, kAXVisibleChildrenAttribute, (CFTypeRef *) &_children);
+    AXUIElementCopyAttributeValue(_dock_app, kAXChildrenAttribute, (CFTypeRef *) &_children);
     if (_children) {
         CFIndex count = CFArrayGetCount(_children);
         for (CFIndex i=0;!active && i != count;i++) {
@@ -279,7 +280,7 @@ inline bool launchpad_active() {
             AXUIElementRef _element = (AXUIElementRef) CFArrayGetValueAtIndex(_children, i);
             AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
             if (_element_role) {
-                active = CFEqual(_element_role, kAXGroupRole) && titleEquals(_element, Launchpad);
+                active = CFEqual(_element_role, kAXGroupRole) && titleEquals(_element, @[Launchpad]);
                 CFRelease(_element_role);
             }
         }
@@ -321,7 +322,7 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int 
                 return _element;
             } else if (CFEqual(_element_role, kAXApplicationRole)) {
                 CFRelease(_element_role);
-                bool xquartz = titleEquals(_element, XQuartz);
+                bool xquartz = titleEquals(_element, @[XQuartz]);
                 if (xquartz) {
                     pid_t application_pid;
                     if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
@@ -367,8 +368,21 @@ AXUIElementRef get_mousewindow(CGPoint point) {
     if (_element) {
         _window = get_raiseable_window(_element, point, 0);
     } else if (error == kAXErrorCannotComplete || error == kAXErrorNotImplemented) {
-        if (verbose) { NSLog(@"App has no Accessibility API support"); } // for instance, GTK3 Apps
+        // fallback, happens for apps that do not support the Accessibility API
+        if (verbose) { NSLog(@"Copy element: no accessibility support"); }
         _window = fallback(point);
+    } else if (error == kAXErrorIllegalArgument) {
+        // fallback, happens in some System Preferences windows
+        if (verbose) { NSLog(@"Copy element: illegal argument"); }
+        _window = fallback(point);
+    } else if (error == kAXErrorAttributeUnsupported) {
+        // no fallback, happens when hovering into volume/wifi menubar window
+        if (verbose) { NSLog(@"Copy element: attribute unsupported"); }
+    } else if (error == kAXErrorFailure) {
+        // no fallback, happens when hovering over the menubar itself
+        if (verbose) { NSLog(@"Copy element: failure"); }
+    } else if (verbose) {
+        NSLog(@"Copy element: AXError %d", error);
     }
 
     if (verbose && !_window) { NSLog(@"No raisable window"); }
@@ -441,8 +455,7 @@ AXUIElementRef findDockApplication() {
     AXUIElementRef _dock = NULL;
     NSArray * _apps = [[NSWorkspace sharedWorkspace] runningApplications];
     for (NSRunningApplication * app in _apps) {
-        CFStringRef bundleIdentifier = (__bridge CFStringRef) app.bundleIdentifier;
-        if (bundleIdentifier && CFEqual(bundleIdentifier, Dock)) {
+        if ([app.bundleIdentifier isEqual: Dock]) {
             _dock = AXUIElementCreateApplication(app.processIdentifier);
             break;
         }
@@ -508,7 +521,6 @@ inline NSScreen * findScreen(CGPoint point) {
     return NULL;
 }
 #endif
-
 //-----------------------------------------------notifications----------------------------------------------
 
 void spaceChanged();
@@ -744,9 +756,8 @@ bool appActivated() {
     }
     CFRelease(_frontmostApp);
 
-    CFStringRef bundleIdentifier = (__bridge CFStringRef) frontmostApp.bundleIdentifier;
-    if (verbose) { NSLog(@"BundleIdentifier: %@", bundleIdentifier); }
-    bool finder_app = bundleIdentifier && CFEqual(bundleIdentifier, Finder);
+    if (verbose) { NSLog(@"BundleIdentifier: %@", frontmostApp.bundleIdentifier); }
+    bool finder_app = [frontmostApp.bundleIdentifier isEqual: Finder];
     if (finder_app) {
         if (_activatedWindow) {
             if (desktop_window(_activatedWindow)) {
@@ -847,7 +858,7 @@ void onTick() {
             float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
             if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
                 if (verbose) { NSLog(@"Menu bar correction"); }
-                mousePoint.y = screenOriginY;
+                mousePoint.y = screenOriginY - 1;
             }
         }
         oldCorrectedPoint = mousePoint;
@@ -894,14 +905,17 @@ void onTick() {
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
                 bool needs_raise = true;
 
-                if (titleEquals(_mouseWindow, NoTitle)) {
+                if (titleEquals(_mouseWindow, @[BartenderBar])) {
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }
-                }
-
-                if (needs_raise) {
+#ifdef FOCUS_FIRST
+                } else if (delayCount != 1 && titleEquals(_mouseWindow, @[NoTitle])) {
+                    needs_raise = false;
+                    if (verbose) { NSLog(@"Excluding window"); }
+#endif
+                } else {
                     AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
-                    if (titleEquals(_mouseWindowApp, AssistiveControl)) {
+                    if (titleEquals(_mouseWindowApp, @[AssistiveControl])) {
                         needs_raise = false;
                         if (verbose) { NSLog(@"Excluding app"); }
                     }
@@ -931,13 +945,17 @@ void onTick() {
                             needs_raise = mouseWindow_id != focusedWindow_id;
                             if (needs_raise) {
 #ifdef FOCUS_FIRST
-                                needs_raise = main_window(_focusedWindow);
+                                if (delayCount) {
+#endif
+                                    needs_raise = !contained_within(_focusedWindow, _mouseWindow);
+#ifdef FOCUS_FIRST
+                                } else {
+                                    needs_raise = main_window(_focusedWindow);
+                                }
                                 if (needs_raise) {
                                     OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
                                     if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
                                 }
-#else
-                                needs_raise = !contained_within(_focusedWindow, _mouseWindow);
 #endif
                             }
                             CFRelease(_focusedWindow);
@@ -1053,6 +1071,7 @@ int main(int argc, const char * argv[]) {
         }
 #endif
         printf("  * verbose: %s\n", verbose ? "true" : "false");
+#if defined OLD_ACTIVATION_METHOD or defined FOCUS_FIRST or defined ALTERNATIVE_TASK_SWITCHER
         printf("\nCompiled with:\n");
 #ifdef OLD_ACTIVATION_METHOD
         printf("  * OLD_ACTIVATION_METHOD\n");
@@ -1062,6 +1081,7 @@ int main(int argc, const char * argv[]) {
 #endif
 #ifdef ALTERNATIVE_TASK_SWITCHER
         printf("  * ALTERNATIVE_TASK_SWITCHER\n");
+#endif
 #endif
         printf("\n");
 

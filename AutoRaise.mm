@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "3.1"
+#define AUTORAISE_VERSION "3.2"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -94,8 +94,10 @@ extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
 #ifdef FOCUS_FIRST
 static pid_t lastFocusedWindow_pid;
 static AXUIElementRef _lastFocusedWindow = NULL;
+static CGWindowID lastFocusedWindow_id = 0;
 #endif
 
+CFMachPortRef eventTap = NULL;
 static char pathBuffer[PROC_PIDPATHINFO_MAXSIZE];
 static bool activated_by_task_switcher = false;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
@@ -291,7 +293,8 @@ inline bool launchpad_active() {
     return active;
 }
 
-AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int count) {
+AXUIElementRef get_raisable_window(AXUIElementRef _element, CGPoint point, int count) {
+    AXUIElementRef _window = NULL;
     if (_element) {
         if (count >= STACK_THRESHOLD) {
             if (verbose) {
@@ -303,61 +306,57 @@ AXUIElementRef get_raiseable_window(AXUIElementRef _element, CGPoint point, int 
                 }
             }
             CFRelease(_element);
-            return NULL;
-        }
-
-        CFStringRef _element_role = NULL;
-        AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
-        bool check_attributes = !_element_role;
-        if (_element_role) {
-            if (CFEqual(_element_role, kAXDockItemRole) ||
-                CFEqual(_element_role, kAXMenuItemRole)) {
-                CFRelease(_element_role);
-                CFRelease(_element);
-            } else if (
-                CFEqual(_element_role, kAXWindowRole) ||
-                CFEqual(_element_role, kAXSheetRole) ||
-                CFEqual(_element_role, kAXDrawerRole)) {
-                CFRelease(_element_role);
-                return _element;
-            } else if (CFEqual(_element_role, kAXApplicationRole)) {
-                CFRelease(_element_role);
-                bool xquartz = titleEquals(_element, @[XQuartz]);
-                if (xquartz) {
-                    pid_t application_pid;
-                    if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
-                        pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
-                            frontmostApplication] processIdentifier];
-                        if (application_pid != frontmost_pid) {
-                            // Focus and/or raising is the responsibility of XQuartz.
-                            // As such AutoRaise features (delay/warp) do not apply.
-                            activate(application_pid);
-                        }
-                    }
+        } else {
+            CFStringRef _element_role = NULL;
+            AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
+            bool check_attributes = !_element_role;
+            if (_element_role) {
+                if (CFEqual(_element_role, kAXDockItemRole) ||
+                    CFEqual(_element_role, kAXMenuItemRole)) {
+                    CFRelease(_element_role);
                     CFRelease(_element);
+                } else if (
+                    CFEqual(_element_role, kAXWindowRole) ||
+                    CFEqual(_element_role, kAXSheetRole) ||
+                    CFEqual(_element_role, kAXDrawerRole)) {
+                    CFRelease(_element_role);
+                    _window = _element;
+                } else if (CFEqual(_element_role, kAXApplicationRole)) {
+                    CFRelease(_element_role);
+                    bool xquartz = titleEquals(_element, @[XQuartz]);
+                    if (xquartz) {
+                        pid_t application_pid;
+                        if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
+                            pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
+                                frontmostApplication] processIdentifier];
+                            if (application_pid != frontmost_pid) {
+                                // Focus and/or raising is the responsibility of XQuartz.
+                                // As such AutoRaise features (delay/warp) do not apply.
+                                activate(application_pid);
+                            }
+                        }
+                        CFRelease(_element);
+                    }
+                    check_attributes = !xquartz;
+                } else {
+                    CFRelease(_element_role);
+                    check_attributes = true;
                 }
-                check_attributes = !xquartz;
-            } else {
-                CFRelease(_element_role);
-                check_attributes = true;
             }
-        }
 
-        if (check_attributes) {
-            AXUIElementRef _window = NULL;
-            AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *) &_window);
-            if (!_window) {
+            if (check_attributes) {
                 AXUIElementCopyAttributeValue(_element, kAXParentAttribute, (CFTypeRef *) &_window);
-                _window = get_raiseable_window(_window, point, ++count);
+                _window = get_raisable_window(_window, point, ++count);
+                if (!_window) {
+                    AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *) &_window);
+                    if (!_window) { _window = fallback(point); }
+                }
+                CFRelease(_element);
             }
-            CFRelease(_element);
-            return _window;
         }
-    } else {
-        return fallback(point);
     }
 
-    return NULL;
+    return _window;
 }
 
 AXUIElementRef get_mousewindow(CGPoint point) {
@@ -366,7 +365,7 @@ AXUIElementRef get_mousewindow(CGPoint point) {
 
     AXUIElementRef _window = NULL;
     if (_element) {
-        _window = get_raiseable_window(_element, point, 0);
+        _window = get_raisable_window(_element, point, 0);
     } else if (error == kAXErrorCannotComplete || error == kAXErrorNotImplemented) {
         // fallback, happens for apps that do not support the Accessibility API
         if (verbose) { NSLog(@"Copy element: no accessibility support"); }
@@ -385,7 +384,15 @@ AXUIElementRef get_mousewindow(CGPoint point) {
         NSLog(@"Copy element: AXError %d", error);
     }
 
-    if (verbose && !_window) { NSLog(@"No raisable window"); }
+    if (verbose) {
+        if (_window) {
+            CFStringRef _windowTitle = NULL;
+            AXUIElementCopyAttributeValue(_window, kAXTitleAttribute, (CFTypeRef *) &_windowTitle);
+            NSLog(@"Mouse window: %@", _windowTitle);
+            if (_windowTitle) { CFRelease(_windowTitle); }
+        } else { NSLog(@"No raisable window"); }
+    }
+
     return _window;
 }
 
@@ -905,14 +912,9 @@ void onTick() {
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
                 bool needs_raise = true;
 
-                if (titleEquals(_mouseWindow, @[BartenderBar])) {
+                if (titleEquals(_mouseWindow, @[NoTitle, BartenderBar])) {
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }
-#ifdef FOCUS_FIRST
-                } else if (delayCount != 1 && titleEquals(_mouseWindow, @[NoTitle])) {
-                    needs_raise = false;
-                    if (verbose) { NSLog(@"Excluding window"); }
-#endif
                 } else {
                     AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
                     if (titleEquals(_mouseWindowApp, @[AssistiveControl])) {
@@ -943,21 +945,22 @@ void onTick() {
                         if (_focusedWindow) {
                             _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
                             needs_raise = mouseWindow_id != focusedWindow_id;
+#ifdef FOCUS_FIRST
                             if (needs_raise) {
-#ifdef FOCUS_FIRST
-                                if (delayCount) {
+                                needs_raise = raiseTimes || mouseWindow_id != lastFocusedWindow_id;
+                            } else { lastFocusedWindow_id = 0; }
+                            if (delayCount) {
 #endif
-                                    needs_raise = !contained_within(_focusedWindow, _mouseWindow);
+                                needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
 #ifdef FOCUS_FIRST
-                                } else {
-                                    needs_raise = main_window(_focusedWindow);
-                                }
-                                if (needs_raise) {
-                                    OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
-                                    if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
-                                }
-#endif
+                            } else {
+                                needs_raise = needs_raise && main_window(_focusedWindow);
                             }
+                            if (needs_raise) {
+                                OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
+                                if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
+                            }
+#endif
                             CFRelease(_focusedWindow);
                         }
                         CFRelease(_frontmostApp);
@@ -986,6 +989,7 @@ void onTick() {
                                     if (_lastFocusedWindow) { CFRelease(_lastFocusedWindow); }
                                     _lastFocusedWindow = _mouseWindow;
                                     lastFocusedWindow_pid = mouseWindow_pid;
+                                    lastFocusedWindow_id = mouseWindow_id;
                                     if (delayCount) { [workspaceWatcher windowFocused: _lastFocusedWindow]; }
                                 }
                             } else {
@@ -1026,6 +1030,9 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
             CGEventFlags flags = CGEventGetFlags(event);
             commandTabPressed = (flags & kCGEventFlagMaskCommand) == kCGEventFlagMaskCommand;
         }
+    } else if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
+        if (verbose) { NSLog(@"Got event tap disabled event, re-enabling..."); }
+        CGEventTapEnable(eventTap, true);
     }
 
     return event;
@@ -1093,8 +1100,9 @@ int main(int argc, const char * argv[]) {
         if (verbose) { NSLog(@"System cursor scale: %f", oldScale); }
 
         CFRunLoopSourceRef runLoopSource = NULL;
-        CFMachPortRef eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, 0,
-            (1 << kCGEventKeyDown) | (1 << kCGEventFlagsChanged), eventTapHandler, NULL);
+        eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionDefault,
+            CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventFlagsChanged),
+            eventTapHandler, NULL);
         if (eventTap) {
             runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0);
             if (runLoopSource) {

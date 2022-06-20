@@ -96,6 +96,7 @@ static pid_t lastFocusedWindow_pid;
 static AXUIElementRef _lastFocusedWindow = NULL;
 #endif
 
+CFMachPortRef eventTap = NULL;
 static char pathBuffer[PROC_PIDPATHINFO_MAXSIZE];
 static bool activated_by_task_switcher = false;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
@@ -1026,6 +1027,9 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
             CGEventFlags flags = CGEventGetFlags(event);
             commandTabPressed = (flags & kCGEventFlagMaskCommand) == kCGEventFlagMaskCommand;
         }
+    } else if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
+        if (verbose) { NSLog(@"Got event tap disabled event, re-enabling..."); }
+        CGEventTapEnable(eventTap, true);
     }
 
     return event;
@@ -1093,8 +1097,9 @@ int main(int argc, const char * argv[]) {
         if (verbose) { NSLog(@"System cursor scale: %f", oldScale); }
 
         CFRunLoopSourceRef runLoopSource = NULL;
-        CFMachPortRef eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, 0,
-            (1 << kCGEventKeyDown) | (1 << kCGEventFlagsChanged), eventTapHandler, NULL);
+        eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionDefault,
+            CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventFlagsChanged),
+            eventTapHandler, NULL);
         if (eventTap) {
             runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0);
             if (runLoopSource) {

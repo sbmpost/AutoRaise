@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "3.2"
+#define AUTORAISE_VERSION "3.3"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -532,7 +532,7 @@ inline NSScreen * findScreen(CGPoint point) {
 
 void spaceChanged();
 bool appActivated();
-void onTick();
+void onTick(bool forceRaise);
 
 @interface MDWorkspaceWatcher:NSObject {}
 - (id)init;
@@ -598,7 +598,7 @@ static MDWorkspaceWatcher * workspaceWatcher = NULL;
     [self performSelector: @selector(onTick:)
         withObject: timerInterval
         afterDelay: timerInterval.floatValue];
-    onTick();
+    onTick(false);
 }
 
 #ifdef FOCUS_FIRST
@@ -824,7 +824,7 @@ bool appActivated() {
     return true;
 }
 
-void onTick() {
+void onTick(bool forceRaise) {
     // determine if mouseMoved
     CGEventRef _event = CGEventCreate(NULL);
     CGPoint mousePoint = CGEventGetLocation(_event);
@@ -897,6 +897,7 @@ void onTick() {
     // mouseMoved: we have to decide if the window needs raising
     // delayTicks: count down as long as the mouse doesn't move
     // raiseTimes: the window needs raising a couple of times.
+    if (forceRaise) { mouseMoved = true; }
     if (mouseMoved || delayTicks || raiseTimes) {
         // don't raise for as long as something is being dragged (resizing a window for instance)
         if (CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft) ||
@@ -944,17 +945,17 @@ void onTick() {
                             (CFTypeRef *) &_focusedWindow);
                         if (_focusedWindow) {
                             _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
-                            needs_raise = mouseWindow_id != focusedWindow_id;
+                            needs_raise = forceRaise || mouseWindow_id != focusedWindow_id;
 #ifdef FOCUS_FIRST
                             if (needs_raise) {
-                                needs_raise = raiseTimes || mouseWindow_id != lastFocusedWindow_id;
+                                needs_raise = forceRaise || raiseTimes || mouseWindow_id != lastFocusedWindow_id;
                             } else { lastFocusedWindow_id = 0; }
                             if (delayCount) {
 #endif
-                                needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+                                needs_raise = forceRaise || (needs_raise && !contained_within(_focusedWindow, _mouseWindow));
 #ifdef FOCUS_FIRST
                             } else {
-                                needs_raise = needs_raise && main_window(_focusedWindow);
+                                needs_raise = forceRaise || (needs_raise && main_window(_focusedWindow));
                             }
                             if (needs_raise) {
                                 OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
@@ -972,16 +973,16 @@ void onTick() {
                         // start the delay
                         delayTicks = delayCount;
                     }
-                    if (raiseTimes || delayTicks == 1) {
+                    if (forceRaise || raiseTimes || delayTicks == 1) {
                         delayTicks = 0; // disable delay
 
-                        bool readyForRaise = !mouseStop || !mouseMoved;
+                        bool readyForRaise = forceRaise || !mouseStop || !mouseMoved;
                         if (raiseTimes && readyForRaise) { raiseTimes--; }
                         else { raiseTimes = 3; }
 
                         if (readyForRaise) {
 #ifdef FOCUS_FIRST
-                            if (delayCount != 1) {
+                            if (!forceRaise && delayCount != 1) {
                                 OSStatus error = GetProcessForPID(mouseWindow_pid, &mouseWindow_psn);
                                 if (!error) {
                                     window_manager_focus_window_without_raise(&mouseWindow_psn,
@@ -1033,6 +1034,8 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
     } else if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
         if (verbose) { NSLog(@"Got event tap disabled event, re-enabling..."); }
         CGEventTapEnable(eventTap, true);
+    } else if (type == NSEventTypeGesture) {
+        onTick(true);
     }
 
     return event;
@@ -1101,8 +1104,8 @@ int main(int argc, const char * argv[]) {
 
         CFRunLoopSourceRef runLoopSource = NULL;
         eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionDefault,
-            CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventFlagsChanged),
-            eventTapHandler, NULL);
+            CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventFlagsChanged) |
+            CGEventMaskBit(NSEventTypeGesture), eventTapHandler, NULL);
         if (eventTap) {
             runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0);
             if (runLoopSource) {

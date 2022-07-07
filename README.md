@@ -45,11 +45,13 @@ bottom of this README.
     ./AutoRaise -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -mouseStop false
 
 The delay is specified in units of 50ms and the warp parameters are factors between 0 and 1. If you only would like to use
-the warp feature, simply set delay to 0. When warping the mouse, the scale parameter allows you to specify the mouse cursor
-size. To disable this, set it to the system configured scale (normally 1.0). If no parameters have been specified, AutoRaise
-disables warp and defaults to -delay 1 (i.e. no delay). If the mouseStop flag is set, AutoRaise requires the mouse to stop
-moving for a moment before raising. Responsiveness will be lower but in return you will be able to select top menubar items
-even if there is another application 'in the way'. To pass the command line parameters by means of a file, create either a
+the warp feature, simply set delay to 0 (i.e. no raise). Note that if raising is disabled this way, one can still force a
+raise with a light tap on the trackpad without clicking through (assuming the trackpad is not configured to click). When
+warping the mouse, the scale parameter allows you to specify the mouse cursor size. To disable this, set it to the system
+configured scale (normally 1.0). If no parameters have been specified, AutoRaise disables warp and defaults to -delay 1
+(i.e. no delay). Without delay, it is still possible to make AutoRaise require a mouse stop before raising by specifying
+-mouseStop true. As a result, responsiveness will be lower but in return you will be able to select top menubar items if
+there is another application 'in the way'. To pass the command line parameters by means of a file, create either a
 **~/.AutoRaise** file or a **~/.config/AutoRaise/config** file. The file format is as follows:
 
     #AutoRaise config file
@@ -105,7 +107,7 @@ like so:
 
 The output should look something like this:
 
-    v3.2 by sbmpost(c) 2022, usage:
+    v3.3 by sbmpost(c) 2022, usage:
 
     AutoRaise
       -delay <0=no-raise, 1=no-delay, 2=50ms, 3=100ms, ...>

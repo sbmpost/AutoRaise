@@ -865,7 +865,7 @@ void onTick() {
             float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
             if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
                 if (verbose) { NSLog(@"Menu bar correction"); }
-                mousePoint.y = screenOriginY - 1;
+                mousePoint.y = screenOriginY;
             }
         }
         oldCorrectedPoint = mousePoint;

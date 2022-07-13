@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "3.2"
+#define AUTORAISE_VERSION "3.3"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -725,11 +725,13 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
     warpMouse =
         parameters[kWarpX] && [parameters[kWarpX] floatValue] >= 0 && [parameters[kWarpX] floatValue] <= 1 &&
         parameters[kWarpY] && [parameters[kWarpY] floatValue] >= 0 && [parameters[kWarpY] floatValue] <= 1;
+#ifndef FOCUS_FIRST
     if (![parameters[kDelay] intValue] && !warpMouse) {
         parameters[kWarpX] = @"0.5";
         parameters[kWarpY] = @"0.5";
         warpMouse = true;
     }
+#endif
     return;
 }
 @end // ConfigClass
@@ -865,7 +867,7 @@ void onTick() {
             float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
             if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
                 if (verbose) { NSLog(@"Menu bar correction"); }
-                mousePoint.y = screenOriginY - 1;
+                mousePoint.y = screenOriginY;
             }
         }
         oldCorrectedPoint = mousePoint;

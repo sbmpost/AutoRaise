@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "3.3"
+#define AUTORAISE_VERSION "3.4"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -374,6 +374,10 @@ AXUIElementRef get_mousewindow(CGPoint point) {
         // fallback, happens in some System Preferences windows
         if (verbose) { NSLog(@"Copy element: illegal argument"); }
         _window = fallback(point);
+    } else if (error == kAXErrorNoValue) {
+        // fallback, happens sometimes when switching to another app (with cmd-tab)
+        if (verbose) { NSLog(@"Copy element: no value"); }
+        _window = fallback(point);
     } else if (error == kAXErrorAttributeUnsupported) {
         // no fallback, happens when hovering into volume/wifi menubar window
         if (verbose) { NSLog(@"Copy element: attribute unsupported"); }
@@ -442,9 +446,9 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
                         AXValueGetValue(_pos1, kAXValueCGPointType, &cg_pos1) &&
                         AXValueGetValue(_size2, kAXValueCGSizeType, &cg_size2) &&
                         AXValueGetValue(_pos2, kAXValueCGPointType, &cg_pos2)) {
-                        contained = cg_pos1.x >= cg_pos2.x && cg_pos1.y >= cg_pos2.y &&
-                            cg_pos1.x + cg_size1.width <= cg_pos2.x + cg_size2.width &&
-                            cg_pos1.y + cg_size1.height <= cg_pos2.y + cg_size2.height;
+                        contained = cg_pos1.x > cg_pos2.x && cg_pos1.y > cg_pos2.y &&
+                            cg_pos1.x + cg_size1.width < cg_pos2.x + cg_size2.width &&
+                            cg_pos1.y + cg_size1.height < cg_pos2.y + cg_size2.height;
                     }
                     CFRelease(_pos2);
                 }
@@ -901,10 +905,21 @@ void onTick() {
     // raiseTimes: the window needs raising a couple of times.
     if (mouseMoved || delayTicks || raiseTimes) {
         // don't raise for as long as something is being dragged (resizing a window for instance)
-        if (CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft) ||
-            CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight)) {
-            return;
-        } else if (launchpad_active()) {
+        bool abort = CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft) ||
+            CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight) ||
+            launchpad_active();
+
+        if (!abort) {
+            CGEventRef _keyDownEvent = CGEventCreateKeyboardEvent(NULL, 0, true);
+            CGEventFlags flags = CGEventGetFlags(_keyDownEvent);
+            if (_keyDownEvent) { CFRelease(_keyDownEvent); }
+            abort = (flags & kCGEventFlagMaskCommand) == kCGEventFlagMaskCommand;
+        }
+
+        if (abort) {
+            if (verbose) { NSLog(@"Abort focus/raise"); }
+            raiseTimes = 0;
+            delayTicks = 0;
             return;
         }
 

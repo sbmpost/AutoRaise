@@ -1,14 +1,19 @@
-When you hover a window it will be raised to the front (with a delay of your choosing) and gets the focus. There is also an
-option to warp the mouse to the center of the activated window when using the cmd-tab key combination. See also
-https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x
+When you hover a window it will be raised to the front (with a delay of your choosing) and gets the focus.  
+There is also an option to warp the mouse to the center of the activated window when using the cmd-tab key
+combination. See also https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x
+
+**Quick start**
+
+If you aren't interested in compiling AutoRaise yourself, it is suggested to download the [disk image](https://github.com/sbmpost/AutoRaise/blob/master/AutoRaise.dmg).  
+It contains a signed application bundle and comes with a convenient GUI thanks to [Lothar Haeger](https://github.com/lhaeger/AutoRaise)
 
 **Compiling AutoRaise**
 
-To use AutoRaise, download the master branch from [here](https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip)
-and use the following commands to compile the binaries:
+To compile AutoRaise yourself, download the master branch from [here](https://github.com/sbmpost/AutoRaise/archive/refs/heads/master.zip)
+and use the following commands:
 
     unzip -d ~ ~/Downloads/AutoRaise-master.zip
-    cd ~/AutoRaise-master && make clean && make
+    cd ~/AutoRaise-master && make clean && make && make install
 
 **Advanced compilation options**
 
@@ -26,19 +31,18 @@ and use the following commands to compile the binaries:
 
 Example advanced compilation command:
 
-    make CXXFLAGS="-DOLD_ACTIVATION_METHOD -DEXPERIMENTAL_FOCUS_FIRST"
+    make CXXFLAGS="-DOLD_ACTIVATION_METHOD -DEXPERIMENTAL_FOCUS_FIRST" && make install
 
 **Running AutoRaise**
 
 After making the project, you end up with these two files:
 
-    AutoRaise
-    AutoRaise.app
+    AutoRaise (command line version)
+    AutoRaise.app (version without GUI)
 
-AutoRaise can be used directly from the command line in which case it accepts command line parameters. The other binary,
-AutoRaise.app, can be used without a terminal window and relies on the presence of a configuration file. Note also that
-AutoRaise.app runs on the background and can only be stopped via "Activity Monitor" or the AppleScript provided near the
-bottom of this README.
+The first binary is to be used directly from the command line and accepts parameters. The second binary, AutoRaise.app, can
+be used without a terminal window and relies on the presence of a configuration file. Note that AutoRaise.app runs on the
+background and can only be stopped via "Activity Monitor" or the AppleScript provided near the bottom of this README.
 
 **Command line usage:**
 
@@ -62,9 +66,8 @@ even if there is another application 'in the way'. To pass the command line para
 **AutoRaise.app usage:**
 
     a) setup configuration file, see above ^
-    b) in the AutoRaise source folder run: make install
-    c) open /Applications/AutoRaise.app (allow Accessibility if asked for)
-    d) either stop AutoRaise via "Activity Monitor" or read on:
+    b) open /Applications/AutoRaise.app (allow Accessibility if asked for)
+    c) either stop AutoRaise via "Activity Monitor" or read on:
 
 To toggle AutoRaise on/off with a keyboard shortcut, paste the AppleScript below into an automator service workflow. Then
 bind the created service to a keyboard shortcut via System Preferences|Keyboard|Shortcuts. This also works for AutoRaise.app
@@ -105,7 +108,7 @@ like so:
 
 The output should look something like this:
 
-    v3.3 by sbmpost(c) 2022, usage:
+    v3.4 by sbmpost(c) 2022, usage:
 
     AutoRaise
       -delay <0=no-raise, 1=no-delay, 2=50ms, 3=100ms, ...>
@@ -132,10 +135,6 @@ The output should look something like this:
     ...
     ...
 
-*Note1*: Dimentium created a homebrew formula for this tool which can be found here:
+*Note*: Dimentium created a homebrew formula for this tool which can be found here:
 
 https://github.com/Dimentium/homebrew-autoraise
-
-*Note2*: Lothar Haeger created a gui on top of the command line version which can be found here:
-
-https://github.com/lhaeger/AutoRaise

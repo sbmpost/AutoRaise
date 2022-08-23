@@ -118,6 +118,7 @@ static bool appWasActivated = false;
 static bool altTaskSwitcher = false;
 static bool warpMouse = false;
 static bool verbose = false;
+static bool ignoreSpaceChange = false;
 static float warpX = 0.5;
 static float warpY = 0.5;
 static float oldScale = 1;
@@ -635,13 +636,14 @@ const NSString *kWarpY = @"warpY";
 const NSString *kScale = @"scale";
 const NSString *kVerbose = @"verbose";
 const NSString *kAltTaskSwitcher = @"altTaskSwitcher";
+const NSString *kIgnoreSpaceChange = @"ignoreSpaceChange";
 const NSString *kIgnoreApps = @"ignoreApps";
 const NSString *kMouseDelta = @"mouseDelta";
 #ifdef FOCUS_FIRST
 const NSString *kFocusDelay = @"focusDelay";
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay, kIgnoreApps, kMouseDelta];
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kIgnoreSpaceChange, kFocusDelay, kIgnoreApps, kMouseDelta];
 #else
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kIgnoreApps, kMouseDelta];
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kIgnoreSpaceChange, kIgnoreApps, kMouseDelta];
 #endif
 NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
@@ -756,6 +758,7 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
     if (![parameters[kDelay] intValue] && !parameters[kFocusDelay]) { parameters[kFocusDelay] = @"1"; }
     if (!parameters[kDelay] && ![parameters[kFocusDelay] intValue]) { parameters[kDelay] = @"1"; }
 #endif
+
     return;
 }
 @end // ConfigClass
@@ -763,8 +766,10 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 //------------------------------------------where it all happens--------------------------------------------
 
 void spaceChanged() {
-    spaceHasChanged = true;
-    oldPoint.x = oldPoint.y = 0;
+  if (!ignoreSpaceChange) {
+            spaceHasChanged = true;
+            oldPoint.x = oldPoint.y = 0;
+  }
 }
 
 bool appActivated() {
@@ -1089,6 +1094,7 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
+
         printf("\nv%s by sbmpost(c) 2022, usage:\n\nAutoRaise\n", AUTORAISE_VERSION);
         printf("  -delay <0=no-raise, 1=no-delay, 2=%dms, 3=%dms, ...>\n", POLLING_MS, POLLING_MS*2);
 #ifdef FOCUS_FIRST
@@ -1098,19 +1104,21 @@ int main(int argc, const char * argv[]) {
         printf("  -altTaskSwitcher <true|false>\n");
         printf("  -ignoreApps \"<App1,App2, ...>\"\n");
         printf("  -mouseDelta <0.1>\n");
+        printf("  -ignorespacechange <true|false>\n");
         printf("  -verbose <true|false>\n\n");
 
         ConfigClass * config = [[ConfigClass alloc] init];
         [config readConfig: argc];
         [config validateParameters];
 
-        delayCount      = [parameters[kDelay] intValue];
-        warpX           = [parameters[kWarpX] floatValue];
-        warpY           = [parameters[kWarpY] floatValue];
-        cursorScale     = [parameters[kScale] floatValue];
-        verbose         = [parameters[kVerbose] boolValue];
-        altTaskSwitcher = [parameters[kAltTaskSwitcher] boolValue];
-        mouseDelta      = [parameters[kMouseDelta] floatValue];
+        delayCount          = [parameters[kDelay] intValue];
+        warpX               = [parameters[kWarpX] floatValue];
+        warpY               = [parameters[kWarpY] floatValue];
+        cursorScale         = [parameters[kScale] floatValue];
+        verbose             = [parameters[kVerbose] boolValue];
+        ignoreSpaceChange   = [parameters[kIgnoreSpaceChange] boolValue];
+        altTaskSwitcher     = [parameters[kAltTaskSwitcher] boolValue];
+        mouseDelta          = [parameters[kMouseDelta] floatValue];
 
         NSMutableArray * ignore;
         if (parameters[kIgnoreApps]) {
@@ -1145,6 +1153,8 @@ int main(int argc, const char * argv[]) {
         }
 
         printf("  * verbose: %s\n", verbose ? "true" : "false");
+
+        printf("  * ignoreSpaceChange: %s\n", ignoreSpaceChange ? "true" : "false");
 #if defined OLD_ACTIVATION_METHOD or defined FOCUS_FIRST or defined ALTERNATIVE_TASK_SWITCHER
         printf("\nCompiled with:\n");
 #ifdef OLD_ACTIVATION_METHOD

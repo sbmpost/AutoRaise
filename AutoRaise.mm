@@ -57,10 +57,6 @@
 static CGPoint oldCorrectedPoint = {0, 0};
 #endif
 
-// Lowering the polling interval increases responsiveness, but steals more cpu
-// cycles. A workable, yet responsible value seems to be about 50 microseconds.
-#define POLLING_MS 50
-
 // An activate delay of about 10 microseconds is just high enough to ensure we always
 // find the latest focused (main)window. This value should be kept as low as possible.
 #define ACTIVATE_DELAY_MS 10
@@ -127,6 +123,7 @@ static int ignoreTimes = 0;
 static int raiseTimes = 0;
 static int delayTicks = 0;
 static int delayCount = 0;
+static int pollMillis = 0;
 #ifdef FOCUS_FIRST
 static int raiseDelayCount = 0;
 #endif
@@ -613,10 +610,10 @@ static MDWorkspaceWatcher * workspaceWatcher = NULL;
 
 #ifdef FOCUS_FIRST
 - (void)windowFocused:(AXUIElementRef)_window {
-    if (verbose) { NSLog(@"Window focused, waiting %0.3fs", raiseDelayCount*POLLING_MS/1000.0); }
+    if (verbose) { NSLog(@"Window focused, waiting %0.3fs", raiseDelayCount*pollMillis/1000.0); }
     [self performSelector: @selector(onWindowFocused:)
         withObject: [NSNumber numberWithUnsignedLong: (uint64_t) _window]
-        afterDelay: raiseDelayCount*POLLING_MS/1000.0];
+        afterDelay: raiseDelayCount*pollMillis/1000.0];
 }
 
 - (void)onWindowFocused:(NSNumber *)_window {
@@ -637,11 +634,12 @@ const NSString *kVerbose = @"verbose";
 const NSString *kAltTaskSwitcher = @"altTaskSwitcher";
 const NSString *kIgnoreApps = @"ignoreApps";
 const NSString *kMouseDelta = @"mouseDelta";
+const NSString *kPollMillis = @"pollMillis";
 #ifdef FOCUS_FIRST
 const NSString *kFocusDelay = @"focusDelay";
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay, kIgnoreApps, kMouseDelta];
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay, kIgnoreApps, kMouseDelta, kPollMillis];
 #else
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kIgnoreApps, kMouseDelta];
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kIgnoreApps, kMouseDelta, kPollMillis];
 #endif
 NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
@@ -744,6 +742,7 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 #endif
         parameters[kDelay] = @"1";
     }
+    if ([parameters[kPollMillis] intValue] < 20) { parameters[kPollMillis] = @"50"; }
     if ([parameters[kMouseDelta] floatValue] < 0) { parameters[kMouseDelta] = @"0"; }
     if ([parameters[kScale] floatValue] < 1) { parameters[kScale] = @"2.0"; }
     warpMouse =
@@ -1089,17 +1088,6 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
 
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
-        printf("\nv%s by sbmpost(c) 2022, usage:\n\nAutoRaise\n", AUTORAISE_VERSION);
-        printf("  -delay <0=no-raise, 1=no-delay, 2=%dms, 3=%dms, ...>\n", POLLING_MS, POLLING_MS*2);
-#ifdef FOCUS_FIRST
-        printf("  -focusDelay <0=no-focus, 1=no-delay, 2=%dms, 3=%dms, ...>\n", POLLING_MS, POLLING_MS*2);
-#endif
-        printf("  -warpX <0.5> -warpY <0.5> -scale <2.0>\n");
-        printf("  -altTaskSwitcher <true|false>\n");
-        printf("  -ignoreApps \"<App1,App2, ...>\"\n");
-        printf("  -mouseDelta <0.1>\n");
-        printf("  -verbose <true|false>\n\n");
-
         ConfigClass * config = [[ConfigClass alloc] init];
         [config readConfig: argc];
         [config validateParameters];
@@ -1111,6 +1099,19 @@ int main(int argc, const char * argv[]) {
         verbose         = [parameters[kVerbose] boolValue];
         altTaskSwitcher = [parameters[kAltTaskSwitcher] boolValue];
         mouseDelta      = [parameters[kMouseDelta] floatValue];
+        pollMillis      = [parameters[kPollMillis] intValue];
+
+        printf("\nv%s by sbmpost(c) 2022, usage:\n\nAutoRaise\n", AUTORAISE_VERSION);
+        printf("  -pollMillis <20, 30, 40, 50, ...>\n");
+        printf("  -delay <0=no-raise, 1=no-delay, 2=%dms, 3=%dms, ...>\n", pollMillis, pollMillis*2);
+#ifdef FOCUS_FIRST
+        printf("  -focusDelay <0=no-focus, 1=no-delay, 2=%dms, 3=%dms, ...>\n", pollMillis, pollMillis*2);
+#endif
+        printf("  -warpX <0.5> -warpY <0.5> -scale <2.0>\n");
+        printf("  -altTaskSwitcher <true|false>\n");
+        printf("  -ignoreApps \"<App1,App2, ...>\"\n");
+        printf("  -mouseDelta <0.1>\n");
+        printf("  -verbose <true|false>\n\n");
 
         NSMutableArray * ignore;
         if (parameters[kIgnoreApps]) {
@@ -1119,14 +1120,15 @@ int main(int argc, const char * argv[]) {
         } else { ignore = [[NSMutableArray alloc] init]; }
 
         printf("Started with:\n");
+        printf("  * pollMillis: %dms\n", pollMillis);
         if (delayCount) {
-            printf("  * delay: %dms\n", (delayCount-1)*POLLING_MS);
+            printf("  * delay: %dms\n", (delayCount-1)*pollMillis);
         }
 #ifdef FOCUS_FIRST
         if ([parameters[kFocusDelay] intValue]) {
             raiseDelayCount = delayCount;
             delayCount = [parameters[kFocusDelay] intValue];
-            printf("  * focusDelay: %dms\n", (delayCount-1)*POLLING_MS);
+            printf("  * focusDelay: %dms\n", (delayCount-1)*pollMillis);
         } else { raiseDelayCount = 1; }
 #endif
         if (warpMouse) {
@@ -1185,7 +1187,7 @@ int main(int argc, const char * argv[]) {
 #else
         if (altTaskSwitcher || delayCount) {
 #endif
-            [workspaceWatcher onTick: [NSNumber numberWithFloat: POLLING_MS/1000.0]];
+            [workspaceWatcher onTick: [NSNumber numberWithFloat: pollMillis/1000.0]];
         }
 
         _dock_app = findDockApplication();

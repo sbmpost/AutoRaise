@@ -55,13 +55,15 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
 **Command line usage:**
 
-    ./AutoRaise -delay 1 -focusDelay 0 -warpX 0.5 -warpY 0.1 -scale 2.5 -altTaskSwitcher false -ignoreApps "App1,App2" -mouseDelta 0.1
+    ./AutoRaise -pollMillis 50 -delay 1 -focusDelay 0 -warpX 0.5 -warpY 0.1 -scale 2.5 -altTaskSwitcher false -ignoreSpaceChanged false -ignoreApps "App1,App2" -mouseDelta 0.1
 
 *Note*: focusDelay is only supported when compiled with the "EXPERIMENTAL_FOCUS_FIRST" flag.
 
-  - delay: Raise delay, specified in units of 50ms. Disabled if 0. A delay > 1 requires the mouse to stop for a moment before raising.
+  - pollMillis: How often to poll the mouse position and consider a raise/focus. Lower values increase responsiveness but also CPU load. Default = 50
 
-  - focusDelay: Focus delay, specified in units of 50ms. Disabled if 0. A delay > 1 requires the mouse to stop for a moment before focusing.
+  - delay: Raise delay, specified in units of pollMillis. Disabled if 0. A delay > 1 requires the mouse to stop for a moment before raising.
+
+  - focusDelay: Focus delay, specified in units of pollMillis. Disabled if 0. A delay > 1 requires the mouse to stop for a moment before focusing.
 
   - warpX: A Factor between 0 and 1. Makes the mouse jump horizontally to the activated window. By default disabled.
 
@@ -71,6 +73,8 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
   - altTaskSwitcher: Set to true if you use 3rd party tools to switch between applications (other than standard command-tab).
 
+  - ignoreSpaceChanged: Do not immediately raise/focus after a space change. The default is false.
+
   - ignoreApps: Comma separated list of apps for which you would like to disable focus/raise.
 
   - mouseDelta: Requires the mouse to move a certain distance. 0.0 = most sensitive whereas higher values decrease sensitivity.
@@ -79,12 +83,14 @@ AutoRaise can read these parameters from a configuration file. To make this happ
 **~/.config/AutoRaise/config** file. The format is as follows:
 
     #AutoRaise config file
+    pollMillis=50
     delay=1
     focusDelay=0
     warpX=0.5
     warpY=0.1
     scale=2.5
     altTaskSwitcher=false
+    ignoreSpaceChanged=false
     ignoreApps="App1,App2"
     mouseDelta=0.1
 
@@ -133,21 +139,26 @@ like so:
 
 The output should look something like this:
 
-    v3.5 by sbmpost(c) 2022, usage:
+    v3.6 by sbmpost(c) 2022, usage:
 
     AutoRaise
+      -pollMillis <20, 30, 40, 50, ...>
       -delay <0=no-raise, 1=no-delay, 2=50ms, 3=100ms, ...>
       -focusDelay <0=no-focus, 1=no-delay, 2=50ms, 3=100ms, ...>
       -warpX <0.5> -warpY <0.5> -scale <2.0>
       -altTaskSwitcher <true|false>
+      -ignoreSpaceChanged <true|false>
       -ignoreApps "<App1,App2, ...>"
       -mouseDelta <0.1>
       -verbose <true|false>
 
     Started with:
+      * pollMillis: 50ms
       * delay: 0ms
+      * focusDelay: disabled
       * warpX: 0.5, warpY: 0.1, scale: 2.5
       * altTaskSwitcher: false
+      * ignoreSpaceChanged: false
       * ignoreApp: App1
       * ignoreApp: App2
       * mouseDelta: 0.1
@@ -157,10 +168,10 @@ The output should look something like this:
       * OLD_ACTIVATION_METHOD
       * EXPERIMENTAL_FOCUS_FIRST
 
-    2022-08-06 00:37:22.187 AutoRaise[64697:2574991] AXIsProcessTrusted: YES
-    2022-08-06 00:37:22.209 AutoRaise[64697:2574991] System cursor scale: 1.000000
-    2022-08-06 00:37:22.225 AutoRaise[64697:2574991] Got run loop source: YES
-    2022-08-06 00:37:22.226 AutoRaise[64697:2574991] Registered app activated selector
+    2022-09-02 22:40:50.498 AutoRaise[60894:1255026] AXIsProcessTrusted: YES
+    2022-09-02 22:40:50.518 AutoRaise[60894:1255026] System cursor scale: 1.000000
+    2022-09-02 22:40:50.533 AutoRaise[60894:1255026] Got run loop source: YES
+    2022-09-02 22:40:50.533 AutoRaise[60894:1255026] Registered app activated selector
     2022-08-06 00:37:22.273 AutoRaise[64697:2574991] Desktop origin (-1280.000000, 0.000000)
     ...
     ...

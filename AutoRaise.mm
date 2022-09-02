@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "3.5"
+#define AUTORAISE_VERSION "3.6"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -109,6 +109,7 @@ static const NSString * XQuartz = @"XQuartz";
 static const NSString * NoTitle = @"";
 static CGPoint desktopOrigin = {0, 0};
 static CGPoint oldPoint = {0, 0};
+static bool ignoreSpaceChanged = false;
 static bool spaceHasChanged = false;
 static bool appWasActivated = false;
 static bool altTaskSwitcher = false;
@@ -632,14 +633,15 @@ const NSString *kWarpY = @"warpY";
 const NSString *kScale = @"scale";
 const NSString *kVerbose = @"verbose";
 const NSString *kAltTaskSwitcher = @"altTaskSwitcher";
+const NSString *kIgnoreSpaceChanged = @"ignoreSpaceChanged";
 const NSString *kIgnoreApps = @"ignoreApps";
 const NSString *kMouseDelta = @"mouseDelta";
 const NSString *kPollMillis = @"pollMillis";
 #ifdef FOCUS_FIRST
 const NSString *kFocusDelay = @"focusDelay";
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay, kIgnoreApps, kMouseDelta, kPollMillis];
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay, kIgnoreSpaceChanged, kIgnoreApps, kMouseDelta, kPollMillis];
 #else
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kIgnoreApps, kMouseDelta, kPollMillis];
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kIgnoreSpaceChanged, kIgnoreApps, kMouseDelta, kPollMillis];
 #endif
 NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
@@ -910,8 +912,10 @@ void onTick() {
         // spaceHasChanged has priority
         // over waiting for the delay
         if (mouseMoved) { return; }
-        raiseTimes = 3;
-        delayTicks = 0;
+        else if (!ignoreSpaceChanged) {
+            raiseTimes = 3;
+            delayTicks = 0;
+        }
         spaceHasChanged = false;
     } else if (delayTicks && mouseMoved) {
         delayTicks = 0;
@@ -1092,14 +1096,15 @@ int main(int argc, const char * argv[]) {
         [config readConfig: argc];
         [config validateParameters];
 
-        delayCount      = [parameters[kDelay] intValue];
-        warpX           = [parameters[kWarpX] floatValue];
-        warpY           = [parameters[kWarpY] floatValue];
-        cursorScale     = [parameters[kScale] floatValue];
-        verbose         = [parameters[kVerbose] boolValue];
-        altTaskSwitcher = [parameters[kAltTaskSwitcher] boolValue];
-        mouseDelta      = [parameters[kMouseDelta] floatValue];
-        pollMillis      = [parameters[kPollMillis] intValue];
+        delayCount         = [parameters[kDelay] intValue];
+        warpX              = [parameters[kWarpX] floatValue];
+        warpY              = [parameters[kWarpY] floatValue];
+        cursorScale        = [parameters[kScale] floatValue];
+        verbose            = [parameters[kVerbose] boolValue];
+        altTaskSwitcher    = [parameters[kAltTaskSwitcher] boolValue];
+        mouseDelta         = [parameters[kMouseDelta] floatValue];
+        pollMillis         = [parameters[kPollMillis] intValue];
+        ignoreSpaceChanged = [parameters[kIgnoreSpaceChanged] boolValue];
 
         printf("\nv%s by sbmpost(c) 2022, usage:\n\nAutoRaise\n", AUTORAISE_VERSION);
         printf("  -pollMillis <20, 30, 40, 50, ...>\n");
@@ -1109,6 +1114,7 @@ int main(int argc, const char * argv[]) {
 #endif
         printf("  -warpX <0.5> -warpY <0.5> -scale <2.0>\n");
         printf("  -altTaskSwitcher <true|false>\n");
+        printf("  -ignoreSpaceChanged <true|false>\n");
         printf("  -ignoreApps \"<App1,App2, ...>\"\n");
         printf("  -mouseDelta <0.1>\n");
         printf("  -verbose <true|false>\n\n");
@@ -1123,19 +1129,25 @@ int main(int argc, const char * argv[]) {
         printf("  * pollMillis: %dms\n", pollMillis);
         if (delayCount) {
             printf("  * delay: %dms\n", (delayCount-1)*pollMillis);
+        } else {
+            printf("  * delay: disabled\n");
         }
 #ifdef FOCUS_FIRST
         if ([parameters[kFocusDelay] intValue]) {
             raiseDelayCount = delayCount;
             delayCount = [parameters[kFocusDelay] intValue];
             printf("  * focusDelay: %dms\n", (delayCount-1)*pollMillis);
-        } else { raiseDelayCount = 1; }
+        } else {
+            raiseDelayCount = 1;
+            printf("  * focusDelay: disabled\n");
+        }
 #endif
         if (warpMouse) {
             printf("  * warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale);
             printf("  * altTaskSwitcher: %s\n", altTaskSwitcher ? "true" : "false");
         }
 
+        printf("  * ignoreSpaceChanged: %s\n", ignoreSpaceChanged ? "true" : "false");
         for (id ignoreApp in ignore) {
             printf("  * ignoreApp: %s\n", [ignoreApp UTF8String]);
         }

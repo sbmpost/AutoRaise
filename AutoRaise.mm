@@ -53,7 +53,7 @@
 // we correct the mouse position before determining which window is underneath the mouse.
 #if MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_12_00_0
 #define WINDOW_CORRECTION 3
-#define MENUBAR_CORRECTION 7
+#define MENUBAR_CORRECTION 8
 static CGPoint oldCorrectedPoint = {0, 0};
 #endif
 
@@ -100,6 +100,7 @@ static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
+static const NSString * IntelliJ = @"IntelliJ IDEA";
 static const NSString * Dock = @"com.apple.dock";
 static const NSString * Finder = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
@@ -109,6 +110,7 @@ static const NSString * XQuartz = @"XQuartz";
 static const NSString * NoTitle = @"";
 static CGPoint desktopOrigin = {0, 0};
 static CGPoint oldPoint = {0, 0};
+static bool propagateMouseMoved = false;
 static bool ignoreSpaceChanged = false;
 static bool spaceHasChanged = false;
 static bool appWasActivated = false;
@@ -864,6 +866,8 @@ void onTick() {
 
     bool mouseMoved = fabs(mouse_x_diff) > mouseDelta;
     mouseMoved = mouseMoved || fabs(mouse_y_diff) > mouseDelta;
+    mouseMoved = mouseMoved || propagateMouseMoved;
+    propagateMouseMoved = false;
 
     // delayCount = 0 -> warp only
 #ifdef FOCUS_FIRST
@@ -921,7 +925,7 @@ void onTick() {
         delayTicks = 0;
         // propagate the mouseMoved event
         // to restart the delay if needed
-        oldPoint.x = oldPoint.y = 0;
+        propagateMouseMoved = true;
         return;
     }
 
@@ -954,6 +958,7 @@ void onTick() {
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
                 bool needs_raise = true;
 #ifdef FOCUS_FIRST
+                bool temporary_workaround_for_intellij_raising_its_subwindows_on_focus = false;
                 if (delayCount && raiseDelayCount != 1 && titleEquals(_mouseWindow, @[NoTitle])) {
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }
@@ -968,6 +973,10 @@ void onTick() {
                         needs_raise = false;
                         if (verbose) { NSLog(@"Excluding app"); }
                     }
+#ifdef FOCUS_FIRST
+                    temporary_workaround_for_intellij_raising_its_subwindows_on_focus =
+                        titleEquals(_mouseWindowApp, @[IntelliJ]);
+#endif
                     CFRelease(_mouseWindowApp);
                 }
 
@@ -1000,6 +1009,9 @@ void onTick() {
                                 if (raiseDelayCount) {
                                     needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                 } else {
+                                    if (temporary_workaround_for_intellij_raising_its_subwindows_on_focus) {
+                                        needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+                                    }
                                     needs_raise = needs_raise && main_window(_focusedWindow);
                                 }
                                 if (needs_raise) {

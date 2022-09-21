@@ -59,7 +59,7 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
 *Note*: focusDelay is only supported when compiled with the "EXPERIMENTAL_FOCUS_FIRST" flag.
 
-  - pollMillis: How often to poll the mouse position and consider a raise/focus. Lower values increase responsiveness but also CPU load. Default = 50
+  - pollMillis: How often to poll the mouse position and consider a raise/focus. Lower values increase responsiveness but also CPU load. Minimum = 20 and default = 50.
 
   - delay: Raise delay, specified in units of pollMillis. Disabled if 0. A delay > 1 requires the mouse to stop for a moment before raising.
 
@@ -168,11 +168,11 @@ The output should look something like this:
       * OLD_ACTIVATION_METHOD
       * EXPERIMENTAL_FOCUS_FIRST
 
-    2022-09-02 22:40:50.498 AutoRaise[60894:1255026] AXIsProcessTrusted: YES
-    2022-09-02 22:40:50.518 AutoRaise[60894:1255026] System cursor scale: 1.000000
-    2022-09-02 22:40:50.533 AutoRaise[60894:1255026] Got run loop source: YES
-    2022-09-02 22:40:50.533 AutoRaise[60894:1255026] Registered app activated selector
-    2022-08-06 00:37:22.273 AutoRaise[64697:2574991] Desktop origin (-1280.000000, 0.000000)
+    2022-09-21 17:21:17.321 AutoRaise[31591:363123] AXIsProcessTrusted: YES
+    2022-09-21 17:21:17.347 AutoRaise[31591:363123] System cursor scale: 1.000000
+    2022-09-21 17:21:17.364 AutoRaise[31591:363123] Got run loop source: YES
+    2022-09-21 17:21:17.365 AutoRaise[31591:363123] Registered app activated selector
+    2022-09-21 17:21:17.415 AutoRaise[31591:363123] Desktop origin (0.000000, -221.000000)
     ...
     ...
 

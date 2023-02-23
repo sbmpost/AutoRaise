@@ -1,5 +1,5 @@
 /*
- * AutoRaise - Copyright (C) 2022 sbmpost
+ * AutoRaise - Copyright (C) 2023 sbmpost
  * Some pieces of the code are based on
  * metamove by jmgao as part of XFree86
  *
@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "3.6"
+#define AUTORAISE_VERSION "3.7-SNAPSHOT"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -104,6 +104,7 @@ static const NSString * IntelliJ = @"IntelliJ IDEA";
 static const NSString * Dock = @"com.apple.dock";
 static const NSString * Finder = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
+static const NSString * Photos = @"Photos";
 static const NSString * BartenderBar = @"Bartender Bar";
 static const NSString * Launchpad = @"Launchpad";
 static const NSString * XQuartz = @"XQuartz";
@@ -519,6 +520,10 @@ inline bool main_window(AXUIElementRef _window) {
     if (_result) {
         main_window = CFEqual(_result, kCFBooleanTrue);
         CFRelease(_result);
+    }
+
+    if (main_window) {
+        main_window = !titleEquals(_window, @[NoTitle]);
     }
 
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
@@ -957,18 +962,20 @@ void onTick() {
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
                 bool needs_raise = true;
+                AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
 #ifdef FOCUS_FIRST
                 bool temporary_workaround_for_intellij_raising_its_subwindows_on_focus = false;
                 if (delayCount && raiseDelayCount != 1 && titleEquals(_mouseWindow, @[NoTitle])) {
-                    needs_raise = false;
-                    if (verbose) { NSLog(@"Excluding window"); }
+                    if (!titleEquals(_mouseWindowApp, @[Photos])) {
+                        needs_raise = false;
+                        if (verbose) { NSLog(@"Excluding window"); }
+                    }
                 } else
 #endif
                 if (titleEquals(_mouseWindow, @[BartenderBar])) {
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }
                 } else {
-                    AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
                     if (titleEquals(_mouseWindowApp, ignoreApps)) {
                         needs_raise = false;
                         if (verbose) { NSLog(@"Excluding app"); }
@@ -1118,7 +1125,7 @@ int main(int argc, const char * argv[]) {
         pollMillis         = [parameters[kPollMillis] intValue];
         ignoreSpaceChanged = [parameters[kIgnoreSpaceChanged] boolValue];
 
-        printf("\nv%s by sbmpost(c) 2022, usage:\n\nAutoRaise\n", AUTORAISE_VERSION);
+        printf("\nv%s by sbmpost(c) 2023, usage:\n\nAutoRaise\n", AUTORAISE_VERSION);
         printf("  -pollMillis <20, 30, 40, 50, ...>\n");
         printf("  -delay <0=no-raise, 1=no-delay, 2=%dms, 3=%dms, ...>\n", pollMillis, pollMillis*2);
 #ifdef FOCUS_FIRST

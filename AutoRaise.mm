@@ -100,6 +100,7 @@ static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
+static NSArray * stayFocusedApps = NULL;
 static const NSString * IntelliJ = @"IntelliJ IDEA";
 static const NSString * Dock = @"com.apple.dock";
 static const NSString * Finder = @"com.apple.finder";
@@ -214,6 +215,11 @@ inline bool titleEquals(AXUIElementRef _element, NSArray * _titles) {
         CFRelease(_elementTitle);
     } else { equal = [_titles containsObject: NoTitle]; }
     return equal;
+}
+
+inline bool checkStayFocusedAppIdentifier(NSArray * _identifiers) {
+    NSRunningApplication *frontmostApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
+    return [_identifiers containsObject:(NSString *)frontmostApp.bundleIdentifier];
 }
 
 NSDictionary * topwindow(CGPoint point) {
@@ -523,7 +529,7 @@ inline bool main_window(AXUIElementRef _window) {
     }
 
     if (main_window) {
-        main_window = !titleEquals(_window, @[NoTitle]);
+        main_window = !checkStayFocusedAppIdentifier(stayFocusedApps);
     }
 
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
@@ -642,11 +648,12 @@ const NSString *kVerbose = @"verbose";
 const NSString *kAltTaskSwitcher = @"altTaskSwitcher";
 const NSString *kIgnoreSpaceChanged = @"ignoreSpaceChanged";
 const NSString *kIgnoreApps = @"ignoreApps";
+const NSString *kFocusedApps = @"stayFocusedApps";
 const NSString *kMouseDelta = @"mouseDelta";
 const NSString *kPollMillis = @"pollMillis";
 #ifdef FOCUS_FIRST
 const NSString *kFocusDelay = @"focusDelay";
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay, kIgnoreSpaceChanged, kIgnoreApps, kMouseDelta, kPollMillis];
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay, kIgnoreSpaceChanged, kIgnoreApps, kFocusedApps, kMouseDelta, kPollMillis];
 #else
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kIgnoreSpaceChanged, kIgnoreApps, kMouseDelta, kPollMillis];
 #endif
@@ -1135,6 +1142,9 @@ int main(int argc, const char * argv[]) {
         printf("  -altTaskSwitcher <true|false>\n");
         printf("  -ignoreSpaceChanged <true|false>\n");
         printf("  -ignoreApps \"<App1,App2, ...>\"\n");
+#ifdef FOCUS_FIRST
+        printf("  -stayFocusedApps \"<App1,App2, ...>\"\n");
+#endif
         printf("  -mouseDelta <0.1>\n");
         printf("  -verbose <true|false>\n\n");
 
@@ -1144,6 +1154,14 @@ int main(int argc, const char * argv[]) {
                 [parameters[kIgnoreApps] componentsSeparatedByString:@","]];
         } else { ignore = [[NSMutableArray alloc] init]; }
 
+#ifdef FOCUS_FIRST
+        NSMutableArray * stayFocused;
+        if (parameters[kFocusedApps]) {
+            stayFocused = [[NSMutableArray alloc] initWithArray:
+                [parameters[kFocusedApps] componentsSeparatedByString:@","]];
+        } else { stayFocused = [[NSMutableArray alloc] init]; }
+#endif
+
         printf("Started with:\n");
         printf("  * pollMillis: %dms\n", pollMillis);
         if (delayCount) {
@@ -1151,6 +1169,9 @@ int main(int argc, const char * argv[]) {
         } else {
             printf("  * delay: disabled\n");
         }
+        
+
+
 #ifdef FOCUS_FIRST
         if ([parameters[kFocusDelay] intValue]) {
             raiseDelayCount = delayCount;
@@ -1170,6 +1191,12 @@ int main(int argc, const char * argv[]) {
         for (id ignoreApp in ignore) {
             printf("  * ignoreApp: %s\n", [ignoreApp UTF8String]);
         }
+#ifdef FOCUS_FIRST
+        for (id stayFocusedApp in stayFocused) {
+            printf("  * stayFocusedApp: %s\n", [stayFocusedApp UTF8String]);
+        }
+        stayFocusedApps = [stayFocused copy];
+#endif
         [ignore addObject: AssistiveControl];
         ignoreApps = [ignore copy];
 

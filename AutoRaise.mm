@@ -100,7 +100,7 @@ static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
-static NSArray * stayFocusedApps = NULL;
+static NSDictionary * stayFocusedWindows = NULL;
 static const NSString * IntelliJ = @"IntelliJ IDEA";
 static const NSString * Dock = @"com.apple.dock";
 static const NSString * Finder = @"com.apple.finder";
@@ -217,9 +217,21 @@ inline bool titleEquals(AXUIElementRef _element, NSArray * _titles) {
     return equal;
 }
 
-inline bool checkStayFocusedAppIdentifier(NSArray * _identifiers) {
+inline bool checkStayFocused(AXUIElementRef _element, NSDictionary * _apps) {
+    bool equal = false;
     NSRunningApplication *frontmostApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
-    return [_identifiers containsObject:(NSString *)frontmostApp.bundleIdentifier];
+    NSString *appBundleIdentifier = frontmostApp.bundleIdentifier;
+    CFStringRef _elementTitle = NULL;
+    AXUIElementCopyAttributeValue(_element, kAXTitleAttribute, (CFTypeRef *) &_elementTitle);
+    for (NSString *app in _apps) {
+        NSArray *windows = _apps[app];
+            if ([appBundleIdentifier isEqualToString:app]) {
+                if ([windows count] > 0) {
+                    equal = equal || [windows containsObject:(__bridge NSString *)_elementTitle];
+                } else { equal = equal || true;}
+            } else { equal = equal || [windows containsObject: NoTitle]; }
+    }
+    return equal;
 }
 
 NSDictionary * topwindow(CGPoint point) {
@@ -529,7 +541,7 @@ inline bool main_window(AXUIElementRef _window) {
     }
 
     if (main_window) {
-        main_window = !checkStayFocusedAppIdentifier(stayFocusedApps);
+        main_window = !checkStayFocused(_window, stayFocusedWindows);
     }
 
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
@@ -648,12 +660,12 @@ const NSString *kVerbose = @"verbose";
 const NSString *kAltTaskSwitcher = @"altTaskSwitcher";
 const NSString *kIgnoreSpaceChanged = @"ignoreSpaceChanged";
 const NSString *kIgnoreApps = @"ignoreApps";
-const NSString *kFocusedApps = @"stayFocusedApps";
+const NSString *kStayFocused = @"stayFocused";
 const NSString *kMouseDelta = @"mouseDelta";
 const NSString *kPollMillis = @"pollMillis";
 #ifdef FOCUS_FIRST
 const NSString *kFocusDelay = @"focusDelay";
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay, kIgnoreSpaceChanged, kIgnoreApps, kFocusedApps, kMouseDelta, kPollMillis];
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay, kIgnoreSpaceChanged, kIgnoreApps, kStayFocused, kMouseDelta, kPollMillis];
 #else
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kIgnoreSpaceChanged, kIgnoreApps, kMouseDelta, kPollMillis];
 #endif
@@ -1143,7 +1155,7 @@ int main(int argc, const char * argv[]) {
         printf("  -ignoreSpaceChanged <true|false>\n");
         printf("  -ignoreApps \"<App1,App2, ...>\"\n");
 #ifdef FOCUS_FIRST
-        printf("  -stayFocusedApps \"<App1,App2, ...>\"\n");
+        printf("  -stayFocused \"<App1:[Window1:Window2:...],App2:[Window1:...], ...>\"\n");
 #endif
         printf("  -mouseDelta <0.1>\n");
         printf("  -verbose <true|false>\n\n");
@@ -1155,11 +1167,14 @@ int main(int argc, const char * argv[]) {
         } else { ignore = [[NSMutableArray alloc] init]; }
 
 #ifdef FOCUS_FIRST
-        NSMutableArray * stayFocused;
-        if (parameters[kFocusedApps]) {
-            stayFocused = [[NSMutableArray alloc] initWithArray:
-                [parameters[kFocusedApps] componentsSeparatedByString:@","]];
-        } else { stayFocused = [[NSMutableArray alloc] init]; }
+        NSMutableDictionary *stayFocused = [[NSMutableDictionary alloc] init];
+        NSArray *appStrings = [parameters[kStayFocused] componentsSeparatedByString:@","];
+        for (NSString *appString in appStrings) {
+            NSArray *windows = [appString componentsSeparatedByString:@":"];
+            NSString *appName = windows[0];
+            NSArray *windowNames = [windows subarrayWithRange:NSMakeRange(1, [windows count] - 1)];
+            stayFocused[appName] = windowNames;
+        }
 #endif
 
         printf("Started with:\n");
@@ -1192,10 +1207,14 @@ int main(int argc, const char * argv[]) {
             printf("  * ignoreApp: %s\n", [ignoreApp UTF8String]);
         }
 #ifdef FOCUS_FIRST
-        for (id stayFocusedApp in stayFocused) {
-            printf("  * stayFocusedApp: %s\n", [stayFocusedApp UTF8String]);
+        printf("  * stayFocused:\n");
+        for (NSString *app in stayFocused) {
+            printf("    * %s\n", [app UTF8String]);
+            for (NSString *window in stayFocused[app]) {
+                printf("      * %s\n", [window UTF8String]);
+            }
         }
-        stayFocusedApps = [stayFocused copy];
+        stayFocusedWindows = [stayFocused copy];
 #endif
         [ignore addObject: AssistiveControl];
         ignoreApps = [ignore copy];

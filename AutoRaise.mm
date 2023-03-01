@@ -99,6 +99,7 @@ static bool activated_by_task_switcher = false;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
+static NSArray * stayFocusedApps = NULL;
 static NSArray * ignoreApps = NULL;
 static const NSString * IntelliJ = @"IntelliJ IDEA";
 static const NSString * Dock = @"com.apple.dock";
@@ -129,6 +130,7 @@ static int raiseTimes = 0;
 static int delayTicks = 0;
 static int delayCount = 0;
 static int pollMillis = 0;
+static int disableKey = 0;
 #ifdef FOCUS_FIRST
 static int raiseDelayCount = 0;
 #endif
@@ -320,7 +322,11 @@ AXUIElementRef get_raisable_window(AXUIElementRef _element, CGPoint point, int c
             bool check_attributes = !_element_role;
             if (_element_role) {
                 if (CFEqual(_element_role, kAXDockItemRole) ||
-                    CFEqual(_element_role, kAXMenuItemRole)) {
+                    CFEqual(_element_role, kAXMenuItemRole) ||
+                    CFEqual(_element_role, kAXMenuRole) ||
+                    CFEqual(_element_role, kAXMenuBarRole) ||
+                    CFEqual(_element_role, kAXMenuBarItemRole) ||
+                    CFEqual(_element_role, kAXPopUpButtonRole)) {
                     CFRelease(_element_role);
                     CFRelease(_element);
                 } else if (
@@ -523,10 +529,7 @@ inline bool main_window(AXUIElementRef _window) {
         CFRelease(_result);
     }
 
-    if (main_window) {
-        main_window = !titleEquals(_window, @[NoTitle, Untitled]);
-    }
-
+    main_window = main_window && !titleEquals(_window, @[NoTitle, Untitled]);
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
     return main_window;
 }
@@ -642,14 +645,18 @@ const NSString *kScale = @"scale";
 const NSString *kVerbose = @"verbose";
 const NSString *kAltTaskSwitcher = @"altTaskSwitcher";
 const NSString *kIgnoreSpaceChanged = @"ignoreSpaceChanged";
+const NSString *kStayFocusedApps = @"stayFocusedApps";
 const NSString *kIgnoreApps = @"ignoreApps";
 const NSString *kMouseDelta = @"mouseDelta";
 const NSString *kPollMillis = @"pollMillis";
+const NSString *kDisableKey = @"disableKey";
 #ifdef FOCUS_FIRST
 const NSString *kFocusDelay = @"focusDelay";
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay, kIgnoreSpaceChanged, kIgnoreApps, kMouseDelta, kPollMillis];
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay,
+    kStayFocusedApps, kIgnoreApps, kIgnoreSpaceChanged, kMouseDelta, kPollMillis, kDisableKey];
 #else
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kIgnoreSpaceChanged, kIgnoreApps, kMouseDelta, kPollMillis];
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher,
+    kStayFocusedApps, kIgnoreApps, kIgnoreSpaceChanged, kMouseDelta, kPollMillis, kDisableKey];
 #endif
 NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
@@ -723,16 +730,19 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
             initWithContentsOfFile: hiddenConfigFilePath
             encoding: NSUTF8StringEncoding error: &error];
 
-        // remove all whitespaces from file
-        configContent = [configContent stringByReplacingOccurrencesOfString:@" " withString:@""];
         NSArray *configLines = [configContent componentsSeparatedByString:@"\n"];
+        NSString *trimmedLine, *trimmedKey, *trimmedValue, *noQuotesValue;
         NSArray *components;
         for (NSString *line in configLines) {
-            if (not [line hasPrefix:@"#"]) {
-                components = [line componentsSeparatedByString:@"="];
+            trimmedLine = [line stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+            if (not [trimmedLine hasPrefix:@"#"]) {
+                components = [trimmedLine componentsSeparatedByString:@"="];
                 if ([components count] == 2) {
                     for (id key in parametersDictionary) {
-                        if ([components[0] isEqual: key]) { parameters[key] = components[1]; }
+                       trimmedKey = [components[0] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+                       trimmedValue = [components[1] stringByTrimmingCharactersInSet: [NSCharacterSet whitespaceCharacterSet]];
+                       noQuotesValue = [trimmedValue stringByReplacingOccurrencesOfString:@"\"" withString:@""];
+                       if ([trimmedKey isEqual: key]) { parameters[key] = noQuotesValue; }
                     }
                 }
             }
@@ -755,6 +765,7 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
     if ([parameters[kPollMillis] intValue] < 20) { parameters[kPollMillis] = @"50"; }
     if ([parameters[kMouseDelta] floatValue] < 0) { parameters[kMouseDelta] = @"0"; }
     if ([parameters[kScale] floatValue] < 1) { parameters[kScale] = @"2.0"; }
+    if (!parameters[kDisableKey]) { parameters[kDisableKey] = @"control"; }
     warpMouse =
         parameters[kWarpX] && [parameters[kWarpX] floatValue] >= 0 && [parameters[kWarpX] floatValue] <= 1 &&
         parameters[kWarpY] && [parameters[kWarpY] floatValue] >= 0 && [parameters[kWarpY] floatValue] <= 1;
@@ -944,11 +955,11 @@ void onTick() {
             CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight) ||
             launchpad_active();
 
-        if (!abort) {
+        if (!abort && disableKey) {
             CGEventRef _keyDownEvent = CGEventCreateKeyboardEvent(NULL, 0, true);
             CGEventFlags flags = CGEventGetFlags(_keyDownEvent);
             if (_keyDownEvent) { CFRelease(_keyDownEvent); }
-            abort = (flags & kCGEventFlagMaskControl) == kCGEventFlagMaskControl;
+            abort = (flags & disableKey) == disableKey;
         }
 
         if (abort) {
@@ -1009,6 +1020,10 @@ void onTick() {
                         if (_focusedWindow) {
                             _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
                             needs_raise = mouseWindow_id != focusedWindow_id;
+                            if (needs_raise && titleEquals(_frontmostApp, stayFocusedApps)) {
+                                needs_raise = false;
+                                if (verbose) { NSLog(@"Stay focused app"); }
+                            }
 #ifdef FOCUS_FIRST
                             if (delayCount && raiseDelayCount != 1) {
                                 if (needs_raise) {
@@ -1129,22 +1144,17 @@ int main(int argc, const char * argv[]) {
         printf("\nv%s by sbmpost(c) 2023, usage:\n\nAutoRaise\n", AUTORAISE_VERSION);
         printf("  -pollMillis <20, 30, 40, 50, ...>\n");
         printf("  -delay <0=no-raise, 1=no-delay, 2=%dms, 3=%dms, ...>\n", pollMillis, pollMillis*2);
+        printf("  -warpX <0.5> -warpY <0.5> -scale <2.0>\n");
+        printf("  -altTaskSwitcher <true|false>\n");
 #ifdef FOCUS_FIRST
         printf("  -focusDelay <0=no-focus, 1=no-delay, 2=%dms, 3=%dms, ...>\n", pollMillis, pollMillis*2);
 #endif
-        printf("  -warpX <0.5> -warpY <0.5> -scale <2.0>\n");
-        printf("  -altTaskSwitcher <true|false>\n");
-        printf("  -ignoreSpaceChanged <true|false>\n");
+        printf("  -stayFocusedApps \"<App1,App2, ...>\"\n");
         printf("  -ignoreApps \"<App1,App2, ...>\"\n");
+        printf("  -ignoreSpaceChanged <true|false>\n");
+        printf("  -disableKey <control|option|disabled>\n");
         printf("  -mouseDelta <0.1>\n");
         printf("  -verbose <true|false>\n\n");
-
-        NSMutableArray * ignore;
-        if (parameters[kIgnoreApps]) {
-            ignore = [[NSMutableArray alloc] initWithArray:
-                [parameters[kIgnoreApps] componentsSeparatedByString:@","]];
-        } else { ignore = [[NSMutableArray alloc] init]; }
-
         printf("Started with:\n");
         printf("  * pollMillis: %dms\n", pollMillis);
         if (delayCount) {
@@ -1152,6 +1162,12 @@ int main(int argc, const char * argv[]) {
         } else {
             printf("  * delay: disabled\n");
         }
+
+        if (warpMouse) {
+            printf("  * warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale);
+            printf("  * altTaskSwitcher: %s\n", altTaskSwitcher ? "true" : "false");
+        }
+
 #ifdef FOCUS_FIRST
         if ([parameters[kFocusDelay] intValue]) {
             raiseDelayCount = delayCount;
@@ -1162,21 +1178,40 @@ int main(int argc, const char * argv[]) {
             printf("  * focusDelay: disabled\n");
         }
 #endif
-        if (warpMouse) {
-            printf("  * warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale);
-            printf("  * altTaskSwitcher: %s\n", altTaskSwitcher ? "true" : "false");
-        }
+        NSMutableArray * stayFocused;
+        if (parameters[kStayFocusedApps]) {
+            stayFocused = [[NSMutableArray alloc] initWithArray:
+                [parameters[kStayFocusedApps] componentsSeparatedByString:@","]];
+        } else { stayFocused = [[NSMutableArray alloc] init]; }
 
-        printf("  * ignoreSpaceChanged: %s\n", ignoreSpaceChanged ? "true" : "false");
+        for (id stayFocusedApp in stayFocused) {
+            printf("  * stayFocusedApp: %s\n", [stayFocusedApp UTF8String]);
+        }
+        stayFocusedApps = [stayFocused copy];
+
+        NSMutableArray * ignore;
+        if (parameters[kIgnoreApps]) {
+            ignore = [[NSMutableArray alloc] initWithArray:
+                [parameters[kIgnoreApps] componentsSeparatedByString:@","]];
+        } else { ignore = [[NSMutableArray alloc] init]; }
+
         for (id ignoreApp in ignore) {
             printf("  * ignoreApp: %s\n", [ignoreApp UTF8String]);
         }
         [ignore addObject: AssistiveControl];
         ignoreApps = [ignore copy];
 
-        if (mouseDelta) {
-            printf("  * mouseDelta: %.1f\n", mouseDelta);
-        }
+        printf("  * ignoreSpaceChanged: %s\n", ignoreSpaceChanged ? "true" : "false");
+
+        if ([parameters[kDisableKey] isEqualToString: @"control"]) {
+            printf("  * disableKey: control\n");
+            disableKey = kCGEventFlagMaskControl;
+        } else if ([parameters[kDisableKey] isEqualToString: @"option"]) {
+            printf("  * disableKey: option\n");
+            disableKey = kCGEventFlagMaskAlternate;
+        } else { printf("  * disableKey: disabled\n"); }
+
+        if (mouseDelta) { printf("  * mouseDelta: %.1f\n", mouseDelta); }
 
         printf("  * verbose: %s\n", verbose ? "true" : "false");
 #if defined OLD_ACTIVATION_METHOD or defined FOCUS_FIRST or defined ALTERNATIVE_TASK_SWITCHER

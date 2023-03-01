@@ -996,9 +996,8 @@ void onTick() {
                     temporary_workaround_for_intellij_raising_its_subwindows_on_focus =
                         titleEquals(_mouseWindowApp, @[IntelliJ]);
 #endif
-                    CFRelease(_mouseWindowApp);
                 }
-
+                CFRelease(_mouseWindowApp);
                 CGWindowID mouseWindow_id;
                 CGWindowID focusedWindow_id;
 #ifdef FOCUS_FIRST

@@ -109,7 +109,6 @@ static const NSString * Photos = @"Photos";
 static const NSString * BartenderBar = @"Bartender Bar";
 static const NSString * Launchpad = @"Launchpad";
 static const NSString * XQuartz = @"XQuartz";
-static const NSString * Untitled = @"Untitled";
 static const NSString * NoTitle = @"";
 static CGPoint desktopOrigin = {0, 0};
 static CGPoint oldPoint = {0, 0};
@@ -529,7 +528,7 @@ inline bool main_window(AXUIElementRef _window) {
         CFRelease(_result);
     }
 
-    main_window = main_window && !titleEquals(_window, @[NoTitle, Untitled]);
+    main_window = main_window && !titleEquals(_window, @[NoTitle]);
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
     return main_window;
 }
@@ -977,7 +976,7 @@ void onTick() {
                 AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
 #ifdef FOCUS_FIRST
                 bool temporary_workaround_for_intellij_raising_its_subwindows_on_focus = false;
-                if (delayCount && raiseDelayCount != 1 && titleEquals(_mouseWindow, @[NoTitle, Untitled])) {
+                if (delayCount && raiseDelayCount != 1 && titleEquals(_mouseWindow, @[NoTitle])) {
                     if (!titleEquals(_mouseWindowApp, @[Photos])) {
                         needs_raise = false;
                         if (verbose) { NSLog(@"Excluding window"); }

@@ -99,8 +99,8 @@ static bool activated_by_task_switcher = false;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
-static NSArray * stayFocusedApps = NULL;
 static NSArray * ignoreApps = NULL;
+static NSArray * stayFocusedBundleIds = NULL;
 static const NSString * IntelliJ = @"IntelliJ IDEA";
 static const NSString * Dock = @"com.apple.dock";
 static const NSString * Finder = @"com.apple.finder";
@@ -644,7 +644,7 @@ const NSString *kScale = @"scale";
 const NSString *kVerbose = @"verbose";
 const NSString *kAltTaskSwitcher = @"altTaskSwitcher";
 const NSString *kIgnoreSpaceChanged = @"ignoreSpaceChanged";
-const NSString *kStayFocusedApps = @"stayFocusedApps";
+const NSString *kStayFocusedBundleIds = @"stayFocusedBundleIds";
 const NSString *kIgnoreApps = @"ignoreApps";
 const NSString *kMouseDelta = @"mouseDelta";
 const NSString *kPollMillis = @"pollMillis";
@@ -652,10 +652,10 @@ const NSString *kDisableKey = @"disableKey";
 #ifdef FOCUS_FIRST
 const NSString *kFocusDelay = @"focusDelay";
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay,
-    kStayFocusedApps, kIgnoreApps, kIgnoreSpaceChanged, kMouseDelta, kPollMillis, kDisableKey];
+    kIgnoreSpaceChanged, kIgnoreApps, kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
 #else
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher,
-    kStayFocusedApps, kIgnoreApps, kIgnoreSpaceChanged, kMouseDelta, kPollMillis, kDisableKey];
+    kIgnoreSpaceChanged, kIgnoreApps, kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
 #endif
 NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
@@ -1006,49 +1006,48 @@ void onTick() {
 #endif
                 if (needs_raise) {
                     _AXUIElementGetWindow(_mouseWindow, &mouseWindow_id);
-                    pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
-                        frontmostApplication] processIdentifier];
-                    AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
-                    if (_frontmostApp) {
-                        AXUIElementRef _focusedWindow = NULL;
-                        AXUIElementCopyAttributeValue(
-                            _frontmostApp,
-                            kAXFocusedWindowAttribute,
-                            (CFTypeRef *) &_focusedWindow);
-                        if (_focusedWindow) {
-                            _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
-                            needs_raise = mouseWindow_id != focusedWindow_id;
-                            if (needs_raise && titleEquals(_frontmostApp, stayFocusedApps)) {
-                                needs_raise = false;
-                                if (verbose) { NSLog(@"Stay focused app"); }
-                            }
+                    NSRunningApplication *frontmostApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
+                    needs_raise = ![stayFocusedBundleIds containsObject: frontmostApp.bundleIdentifier];
+                    if (needs_raise) {
+                        pid_t frontmost_pid = frontmostApp.processIdentifier;
+                        AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
+                        if (_frontmostApp) {
+                            AXUIElementRef _focusedWindow = NULL;
+                            AXUIElementCopyAttributeValue(
+                                _frontmostApp,
+                                kAXFocusedWindowAttribute,
+                                (CFTypeRef *) &_focusedWindow);
+                            if (_focusedWindow) {
+                                _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
+                                needs_raise = mouseWindow_id != focusedWindow_id;
 #ifdef FOCUS_FIRST
-                            if (delayCount && raiseDelayCount != 1) {
-                                if (needs_raise) {
-                                    needs_raise = raiseTimes || mouseWindow_id != lastFocusedWindow_id;
-                                } else { lastFocusedWindow_id = 0; }
-                                if (raiseDelayCount) {
-                                    needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-                                } else {
-                                    if (temporary_workaround_for_intellij_raising_its_subwindows_on_focus) {
+                                if (delayCount && raiseDelayCount != 1) {
+                                    if (needs_raise) {
+                                        needs_raise = raiseTimes || mouseWindow_id != lastFocusedWindow_id;
+                                    } else { lastFocusedWindow_id = 0; }
+                                    if (raiseDelayCount) {
                                         needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+                                    } else {
+                                        if (temporary_workaround_for_intellij_raising_its_subwindows_on_focus) {
+                                            needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+                                        }
+                                        needs_raise = needs_raise && main_window(_focusedWindow);
                                     }
-                                    needs_raise = needs_raise && main_window(_focusedWindow);
-                                }
-                                if (needs_raise) {
-                                    OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
-                                    if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
-                                }
-                            } else {
+                                    if (needs_raise) {
+                                        OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
+                                        if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
+                                    }
+                                } else {
 #endif
-                            needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+                                needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
 #ifdef FOCUS_FIRST
-                            }
+                                }
 #endif
-                            CFRelease(_focusedWindow);
+                                CFRelease(_focusedWindow);
+                            }
+                            CFRelease(_frontmostApp);
                         }
-                        CFRelease(_frontmostApp);
-                    }
+                    } else if (verbose) { NSLog(@"Stay focused"); }
                 }
 
                 if (needs_raise) {
@@ -1142,17 +1141,18 @@ int main(int argc, const char * argv[]) {
         printf("\nv%s by sbmpost(c) 2023, usage:\n\nAutoRaise\n", AUTORAISE_VERSION);
         printf("  -pollMillis <20, 30, 40, 50, ...>\n");
         printf("  -delay <0=no-raise, 1=no-delay, 2=%dms, 3=%dms, ...>\n", pollMillis, pollMillis*2);
-        printf("  -warpX <0.5> -warpY <0.5> -scale <2.0>\n");
-        printf("  -altTaskSwitcher <true|false>\n");
 #ifdef FOCUS_FIRST
         printf("  -focusDelay <0=no-focus, 1=no-delay, 2=%dms, 3=%dms, ...>\n", pollMillis, pollMillis*2);
 #endif
-        printf("  -stayFocusedApps \"<App1,App2, ...>\"\n");
-        printf("  -ignoreApps \"<App1,App2, ...>\"\n");
+        printf("  -warpX <0.5> -warpY <0.5> -scale <2.0>\n");
+        printf("  -altTaskSwitcher <true|false>\n");
         printf("  -ignoreSpaceChanged <true|false>\n");
+        printf("  -ignoreApps \"<App1,App2, ...>\"\n");
+        printf("  -stayFocusedBundleIds \"<Id1,Id2, ...>\"\n");
         printf("  -disableKey <control|option|disabled>\n");
         printf("  -mouseDelta <0.1>\n");
         printf("  -verbose <true|false>\n\n");
+
         printf("Started with:\n");
         printf("  * pollMillis: %dms\n", pollMillis);
         if (delayCount) {
@@ -1160,12 +1160,6 @@ int main(int argc, const char * argv[]) {
         } else {
             printf("  * delay: disabled\n");
         }
-
-        if (warpMouse) {
-            printf("  * warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale);
-            printf("  * altTaskSwitcher: %s\n", altTaskSwitcher ? "true" : "false");
-        }
-
 #ifdef FOCUS_FIRST
         if ([parameters[kFocusDelay] intValue]) {
             raiseDelayCount = delayCount;
@@ -1176,16 +1170,13 @@ int main(int argc, const char * argv[]) {
             printf("  * focusDelay: disabled\n");
         }
 #endif
-        NSMutableArray * stayFocused;
-        if (parameters[kStayFocusedApps]) {
-            stayFocused = [[NSMutableArray alloc] initWithArray:
-                [parameters[kStayFocusedApps] componentsSeparatedByString:@","]];
-        } else { stayFocused = [[NSMutableArray alloc] init]; }
 
-        for (id stayFocusedApp in stayFocused) {
-            printf("  * stayFocusedApp: %s\n", [stayFocusedApp UTF8String]);
+        if (warpMouse) {
+            printf("  * warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale);
+            printf("  * altTaskSwitcher: %s\n", altTaskSwitcher ? "true" : "false");
         }
-        stayFocusedApps = [stayFocused copy];
+
+        printf("  * ignoreSpaceChanged: %s\n", ignoreSpaceChanged ? "true" : "false");
 
         NSMutableArray * ignore;
         if (parameters[kIgnoreApps]) {
@@ -1199,7 +1190,16 @@ int main(int argc, const char * argv[]) {
         [ignore addObject: AssistiveControl];
         ignoreApps = [ignore copy];
 
-        printf("  * ignoreSpaceChanged: %s\n", ignoreSpaceChanged ? "true" : "false");
+        NSMutableArray * stayFocused;
+        if (parameters[kStayFocusedBundleIds]) {
+            stayFocused = [[NSMutableArray alloc] initWithArray:
+                [parameters[kStayFocusedBundleIds] componentsSeparatedByString:@","]];
+        } else { stayFocused = [[NSMutableArray alloc] init]; }
+
+        for (id stayFocusedBundleId in stayFocused) {
+            printf("  * stayFocusedBundleId: %s\n", [stayFocusedBundleId UTF8String]);
+        }
+        stayFocusedBundleIds = [stayFocused copy];
 
         if ([parameters[kDisableKey] isEqualToString: @"control"]) {
             printf("  * disableKey: control\n");

@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "3.7-SNAPSHOT"
+#define AUTORAISE_VERSION "3.7"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -528,7 +528,6 @@ inline bool main_window(AXUIElementRef _window) {
         CFRelease(_result);
     }
 
-    main_window = main_window && !titleEquals(_window, @[NoTitle]);
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
     return main_window;
 }

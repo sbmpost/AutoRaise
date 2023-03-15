@@ -528,6 +528,7 @@ inline bool main_window(AXUIElementRef _window) {
         CFRelease(_result);
     }
 
+    main_window = main_window && !titleEquals(_window, @[NoTitle]);
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
     return main_window;
 }
@@ -974,12 +975,13 @@ void onTick() {
                 bool needs_raise = true;
                 AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
 #ifdef FOCUS_FIRST
+                bool app_main_window = false;
                 bool temporary_workaround_for_intellij_raising_its_subwindows_on_focus = false;
                 if (delayCount && raiseDelayCount != 1 && titleEquals(_mouseWindow, @[NoTitle])) {
                     if (!titleEquals(_mouseWindowApp, @[Photos])) {
                         needs_raise = false;
                         if (verbose) { NSLog(@"Excluding window"); }
-                    }
+                    } else { app_main_window = true; }
                 } else
 #endif
                 if (titleEquals(_mouseWindow, @[BartenderBar])) {
@@ -1030,7 +1032,7 @@ void onTick() {
                                         if (temporary_workaround_for_intellij_raising_its_subwindows_on_focus) {
                                             needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                         }
-                                        needs_raise = needs_raise && main_window(_focusedWindow);
+                                        needs_raise = needs_raise && (app_main_window || main_window(_focusedWindow));
                                     }
                                     if (needs_raise) {
                                         OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);

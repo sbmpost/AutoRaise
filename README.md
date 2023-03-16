@@ -55,7 +55,7 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
 **Command line usage:**
 
-    ./AutoRaise -pollMillis 50 -delay 1 -focusDelay 0 -warpX 0.5 -warpY 0.1 -scale 2.5 -altTaskSwitcher false -ignoreSpaceChanged false -ignoreApps "App1,App2" -mouseDelta 0.1
+    ./AutoRaise -pollMillis 50 -delay 1 -focusDelay 0 -warpX 0.5 -warpY 0.1 -scale 2.5 -altTaskSwitcher false -ignoreSpaceChanged false -ignoreApps "App1,App2" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
 
 *Note*: focusDelay is only supported when compiled with the "EXPERIMENTAL_FOCUS_FIRST" flag.
 
@@ -77,7 +77,13 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
   - ignoreApps: Comma separated list of apps for which you would like to disable focus/raise.
 
+  - stayFocusedBundleIds: Comma separated list of app bundle identifiers that shouldn't lose focus even when hovering the mouse over another window.
+
+  - disableKey: Set to control, option or disabled. This will temporarily disable AutoRaise while holding the specified key. The default is control.
+
   - mouseDelta: Requires the mouse to move a certain distance. 0.0 = most sensitive whereas higher values decrease sensitivity.
+
+  - verbose: Set to true to make AutoRaise show a log of events when started in a terminal.
     
 AutoRaise can read these parameters from a configuration file. To make this happen, create a **~/.AutoRaise** file or a
 **~/.config/AutoRaise/config** file. The format is as follows:
@@ -92,6 +98,8 @@ AutoRaise can read these parameters from a configuration file. To make this happ
     altTaskSwitcher=false
     ignoreSpaceChanged=false
     ignoreApps="App1,App2"
+    stayFocusedApps="Id1,Id2"
+    disableKey="control"
     mouseDelta=0.1
 
 **AutoRaise.app usage:**
@@ -139,7 +147,7 @@ like so:
 
 The output should look something like this:
 
-    v3.6 by sbmpost(c) 2022, usage:
+    v3.7 by sbmpost(c) 2023, usage:
 
     AutoRaise
       -pollMillis <20, 30, 40, 50, ...>
@@ -149,6 +157,8 @@ The output should look something like this:
       -altTaskSwitcher <true|false>
       -ignoreSpaceChanged <true|false>
       -ignoreApps "<App1,App2, ...>"
+      -stayFocusedBundleIds "<Id1,Id2, ...>"
+      -disableKey <control|option|disabled>
       -mouseDelta <0.1>
       -verbose <true|false>
 
@@ -161,18 +171,21 @@ The output should look something like this:
       * ignoreSpaceChanged: false
       * ignoreApp: App1
       * ignoreApp: App2
-      * mouseDelta: 0.1
+      * stayFocusedBundleId: Id1
+      * stayFocusedBundleId: Id2
+      * disableKey: control
+      * mouseDelta: 2.0
       * verbose: true
 
     Compiled with:
       * OLD_ACTIVATION_METHOD
       * EXPERIMENTAL_FOCUS_FIRST
 
-    2022-09-21 17:21:17.321 AutoRaise[31591:363123] AXIsProcessTrusted: YES
-    2022-09-21 17:21:17.347 AutoRaise[31591:363123] System cursor scale: 1.000000
-    2022-09-21 17:21:17.364 AutoRaise[31591:363123] Got run loop source: YES
-    2022-09-21 17:21:17.365 AutoRaise[31591:363123] Registered app activated selector
-    2022-09-21 17:21:17.415 AutoRaise[31591:363123] Desktop origin (0.000000, -221.000000)
+    2023-03-01 18:22:48.315 AutoRaise[61965:2441068] AXIsProcessTrusted: YES
+    2023-03-01 18:22:48.335 AutoRaise[61965:2441068] System cursor scale: 1.000000
+    2023-03-01 18:22:48.352 AutoRaise[61965:2441068] Got run loop source: YES
+    2023-03-01 18:22:48.353 AutoRaise[61965:2441068] Registered app activated selector
+    2023-03-01 18:22:48.407 AutoRaise[61965:2441068] Desktop origin (0.000000, -221.000000)
     ...
     ...
 

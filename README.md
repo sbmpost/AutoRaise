@@ -98,7 +98,7 @@ AutoRaise can read these parameters from a configuration file. To make this happ
     altTaskSwitcher=false
     ignoreSpaceChanged=false
     ignoreApps="App1,App2"
-    stayFocusedApps="Id1,Id2"
+    stayFocusedBundleIds="Id1,Id2"
     disableKey="control"
     mouseDelta=0.1
 

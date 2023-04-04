@@ -6,15 +6,18 @@ https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on
 
 **Quick start**
 
-If you aren't interested in compiling AutoRaise, you can download the [disk image](
-https://github.com/sbmpost/AutoRaise/blob/master/AutoRaise.dmg). It contains a signed application bundle and comes with a convenient GUI
-thanks to [Lothar Haeger](https://github.com/lhaeger/AutoRaise). When started, AutoRaise is disabled by default. Right click on the balloon
-icon in the menubar to change the defaults and left click to start AutoRaise. You will see a dialog asking you to enable Accessibility in
-System Preferences.
+    1. Download the [disk image](https://github.com/sbmpost/AutoRaise/blob/master/AutoRaise.dmg)
+    2. Double click downloaded .dmg in Finder.
+    3. In finder, look for mounted disk image on side bar at left.
+    4. Drag the AutoRaise.app into the Applications folder.
+    5. Then open AutoRaise from Applications.
+    6. Give permissions to AutoRaise in System/Accessibility
+    7. Right click the menu bar balloon at top, then select preferences
 
-*Important*: If you see an older AutoRaise item with balloon icon in the Accessibility pane, first remove it **completely** (clicking the
-minus). Then stop and start AutoRaise clicking the balloon icon, and the item should re-appear so that you can properly enable
-Accessibility.
+*Important*: When started, AutoRaise is disabled by default. Right click on the balloon icon in the menubar to change the defaults
+and left click to start AutoRaise. You will see a dialog asking you to enable Accessibility in System Preferences. If you see an
+older AutoRaise item with balloon icon in the Accessibility pane, first remove it **completely** (clicking the minus). Then stop
+and start AutoRaise clicking the balloon icon, and the item should re-appear so that you can properly enable Accessibility.
 
 **Compiling AutoRaise**
 

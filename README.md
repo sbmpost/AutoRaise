@@ -14,10 +14,9 @@ https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on
     6. Give permissions to AutoRaise in System/Accessibility
     7. Right click the menu bar balloon at top, then select preferences
 
-*Important*: When started, AutoRaise is disabled by default. Right click on the balloon icon in the menubar to change the defaults
-and left click to start AutoRaise. You will see a dialog asking you to enable Accessibility in System Preferences. If you see an
-older AutoRaise item with balloon icon in the Accessibility pane, first remove it **completely** (clicking the minus). Then stop
-and start AutoRaise clicking the balloon icon, and the item should re-appear so that you can properly enable Accessibility.
+*Important*: When you enable Accessibility in System Preferences, if you see an older AutoRaise item with balloon icon in the
+Accessibility pane, first remove it **completely** (clicking the minus). Then stop and start AutoRaise clicking the balloon icon,
+and the item should re-appear so that you can properly enable Accessibility.
 
 **Compiling AutoRaise**
 

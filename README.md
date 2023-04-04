@@ -15,8 +15,8 @@ https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on
     7. Right click the menu bar balloon at top, then select preferences
 
 *Important*: When you enable Accessibility in System Preferences, if you see an older AutoRaise item with balloon icon in the
-Accessibility pane, first remove it **completely** (clicking the minus). Then stop and start AutoRaise clicking the balloon icon,
-and the item should re-appear so that you can properly enable Accessibility.
+Accessibility pane, first remove it **completely** (clicking the minus). Then stop and start AutoRaise by left clicking the balloon
+icon, and the item should re-appear so that you can properly enable Accessibility.
 
 **Compiling AutoRaise**
 

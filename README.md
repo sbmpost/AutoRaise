@@ -6,7 +6,7 @@ https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on
 
 **Quick start**
 
-    1. Download the [disk image](https://github.com/sbmpost/AutoRaise/blob/master/AutoRaise.dmg)
+    1. Download the disk image from https://github.com/sbmpost/AutoRaise/blob/master/AutoRaise.dmg
     2. Double click downloaded .dmg in Finder.
     3. In finder, look for mounted disk image on side bar at left.
     4. Drag the AutoRaise.app into the Applications folder.

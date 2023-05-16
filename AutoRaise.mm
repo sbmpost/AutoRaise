@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "3.7"
+#define AUTORAISE_VERSION "3.8"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -90,7 +90,7 @@ extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
 #ifdef FOCUS_FIRST
 static pid_t lastFocusedWindow_pid;
 static AXUIElementRef _lastFocusedWindow = NULL;
-static CGWindowID lastFocusedWindow_id = 0;
+static CGWindowID lastFocusedWindow_id = kCGNullWindowID;
 #endif
 
 CFMachPortRef eventTap = NULL;
@@ -101,11 +101,9 @@ static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
 static NSArray * stayFocusedBundleIds = NULL;
-static const NSString * IntelliJ = @"IntelliJ IDEA";
 static const NSString * Dock = @"com.apple.dock";
 static const NSString * Finder = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
-static const NSString * Photos = @"Photos";
 static const NSString * BartenderBar = @"Bartender Bar";
 static const NSString * Launchpad = @"Launchpad";
 static const NSString * XQuartz = @"XQuartz";
@@ -132,6 +130,8 @@ static int pollMillis = 0;
 static int disableKey = 0;
 #ifdef FOCUS_FIRST
 static int raiseDelayCount = 0;
+static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator"];
+static NSArray * jetBrainsAppsRaisingOnFocus = @[@"IntelliJ IDEA", @"PyCharm", @"WebStorm"];
 #endif
 
 //----------------------------------------yabai focus only methods------------------------------------------
@@ -519,7 +519,7 @@ inline bool desktop_window(AXUIElementRef _window) {
 }
 
 #ifdef FOCUS_FIRST
-inline bool main_window(AXUIElementRef _window) {
+inline bool main_window(AXUIElementRef _app, AXUIElementRef _window) {
     bool main_window = false;
     CFBooleanRef _result = NULL;
     AXUIElementCopyAttributeValue(_window, kAXMainAttribute, (CFTypeRef *) &_result);
@@ -528,7 +528,11 @@ inline bool main_window(AXUIElementRef _window) {
         CFRelease(_result);
     }
 
-    main_window = main_window && !titleEquals(_window, @[NoTitle]);
+    main_window = main_window && (
+        !titleEquals(_window, @[NoTitle]) ||
+        titleEquals(_app, @[@"Finder"]) ||
+        titleEquals(_app, mainWindowAppsWithoutTitle));
+
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
     return main_window;
 }
@@ -975,13 +979,13 @@ void onTick() {
                 bool needs_raise = true;
                 AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
 #ifdef FOCUS_FIRST
-                bool app_main_window = false;
-                bool temporary_workaround_for_intellij_raising_its_subwindows_on_focus = false;
+                bool mouse_main_window_without_title = false;
+                bool temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = false;
                 if (delayCount && raiseDelayCount != 1 && titleEquals(_mouseWindow, @[NoTitle])) {
-                    if (!titleEquals(_mouseWindowApp, @[Photos])) {
+                    if (!titleEquals(_mouseWindowApp, mainWindowAppsWithoutTitle)) {
                         needs_raise = false;
                         if (verbose) { NSLog(@"Excluding window"); }
-                    } else { app_main_window = true; }
+                    } else { mouse_main_window_without_title = true; }
                 } else
 #endif
                 if (titleEquals(_mouseWindow, @[BartenderBar])) {
@@ -993,8 +997,8 @@ void onTick() {
                         if (verbose) { NSLog(@"Excluding app"); }
                     }
 #ifdef FOCUS_FIRST
-                    temporary_workaround_for_intellij_raising_its_subwindows_on_focus =
-                        titleEquals(_mouseWindowApp, @[IntelliJ]);
+                    temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus =
+                        titleEquals(_mouseWindowApp, jetBrainsAppsRaisingOnFocus);
 #endif
                 }
                 CFRelease(_mouseWindowApp);
@@ -1025,14 +1029,17 @@ void onTick() {
                                 if (delayCount && raiseDelayCount != 1) {
                                     if (needs_raise) {
                                         needs_raise = raiseTimes || mouseWindow_id != lastFocusedWindow_id;
-                                    } else { lastFocusedWindow_id = 0; }
+                                    } else { lastFocusedWindow_id = kCGNullWindowID; }
                                     if (raiseDelayCount) {
                                         needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                     } else {
-                                        if (temporary_workaround_for_intellij_raising_its_subwindows_on_focus) {
+                                        if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
                                             needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                         }
-                                        needs_raise = needs_raise && (app_main_window || main_window(_focusedWindow));
+                                        needs_raise = needs_raise && (
+                                            mouse_main_window_without_title ||
+                                            main_window(_frontmostApp, _focusedWindow)
+                                        );
                                     }
                                     if (needs_raise) {
                                         OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);

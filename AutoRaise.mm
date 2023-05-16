@@ -88,9 +88,11 @@ extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
 // Above methods are undocumented and subjective to incompatible changes
 
 #ifdef FOCUS_FIRST
+static int raiseDelayCount = 0;
 static pid_t lastFocusedWindow_pid;
 static AXUIElementRef _lastFocusedWindow = NULL;
-static CGWindowID lastFocusedWindow_id = kCGNullWindowID;
+static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator"];
+static NSArray * jetBrainsAppsRaisingOnFocus = @[@"IntelliJ IDEA", @"PyCharm", @"WebStorm"];
 #endif
 
 CFMachPortRef eventTap = NULL;
@@ -128,11 +130,6 @@ static int delayTicks = 0;
 static int delayCount = 0;
 static int pollMillis = 0;
 static int disableKey = 0;
-#ifdef FOCUS_FIRST
-static int raiseDelayCount = 0;
-static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator"];
-static NSArray * jetBrainsAppsRaisingOnFocus = @[@"IntelliJ IDEA", @"PyCharm", @"WebStorm"];
-#endif
 
 //----------------------------------------yabai focus only methods------------------------------------------
 
@@ -1027,9 +1024,6 @@ void onTick() {
                                 needs_raise = mouseWindow_id != focusedWindow_id;
 #ifdef FOCUS_FIRST
                                 if (delayCount && raiseDelayCount != 1) {
-                                    if (needs_raise) {
-                                        needs_raise = raiseTimes || mouseWindow_id != lastFocusedWindow_id;
-                                    } else { lastFocusedWindow_id = kCGNullWindowID; }
                                     if (raiseDelayCount) {
                                         needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                     } else {
@@ -1072,12 +1066,26 @@ void onTick() {
                         if (delayCount && raiseDelayCount != 1) {
                             OSStatus error = GetProcessForPID(mouseWindow_pid, &mouseWindow_psn);
                             if (!error) {
-                                window_manager_focus_window_without_raise(&mouseWindow_psn,
-                                    mouseWindow_id, _focusedWindow_psn, focusedWindow_id);
+                                bool floating_window = false;
+                                CFStringRef _element_sub_role = NULL;
+                                AXUIElementCopyAttributeValue(
+                                    _mouseWindow,
+                                    kAXSubroleAttribute,
+                                    (CFTypeRef *) &_element_sub_role);
+                                if (_element_sub_role) {
+                                    floating_window =
+                                        CFEqual(_element_sub_role, kAXFloatingWindowSubrole) ||
+                                        CFEqual(_element_sub_role, kAXSystemFloatingWindowSubrole);
+                                    CFRelease(_element_sub_role);
+                                }
+                                if (!floating_window) {
+                                    // TODO: method below seems unable to focus floating windows
+                                    window_manager_focus_window_without_raise(&mouseWindow_psn,
+                                        mouseWindow_id, _focusedWindow_psn, focusedWindow_id);
+                                } else if (verbose) { NSLog(@"Unable to focus floating window"); }
                                 if (_lastFocusedWindow) { CFRelease(_lastFocusedWindow); }
                                 _lastFocusedWindow = _mouseWindow;
                                 lastFocusedWindow_pid = mouseWindow_pid;
-                                lastFocusedWindow_id = mouseWindow_id;
                                 if (raiseDelayCount) { [workspaceWatcher windowFocused: _lastFocusedWindow]; }
                             }
                         } else {

@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "3.8"
+#define AUTORAISE_VERSION "3.9"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -100,15 +100,14 @@ static char pathBuffer[PROC_PIDPATHINFO_MAXSIZE];
 static bool activated_by_task_switcher = false;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
-static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
 static NSArray * stayFocusedBundleIds = NULL;
-static const NSString * Dock = @"com.apple.dock";
-static const NSString * Finder = @"com.apple.finder";
+static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
 static const NSString * BartenderBar = @"Bartender Bar";
-static const NSString * Launchpad = @"Launchpad";
 static const NSString * XQuartz = @"XQuartz";
+static const NSString * Finder = @"Finder";
+static const NSString * Dock = @"Dock";
 static const NSString * NoTitle = @"";
 static CGPoint desktopOrigin = {0, 0};
 static CGPoint oldPoint = {0, 0};
@@ -204,6 +203,7 @@ inline void raiseAndActivate(AXUIElementRef _window, pid_t window_pid) {
     }
 }
 
+// TODO: does not take into account different languages
 inline bool titleEquals(AXUIElementRef _element, NSArray * _titles) {
     bool equal = false;
     CFStringRef _elementTitle = NULL;
@@ -277,28 +277,6 @@ AXUIElementRef fallback(CGPoint point) {
     return _window;
 }
 
-inline bool launchpad_active() {
-    bool active = false;
-    CFArrayRef _children = NULL;
-    AXUIElementCopyAttributeValue(_dock_app, kAXChildrenAttribute, (CFTypeRef *) &_children);
-    if (_children) {
-        CFIndex count = CFArrayGetCount(_children);
-        for (CFIndex i=0;!active && i != count;i++) {
-            CFStringRef _element_role = NULL;
-            AXUIElementRef _element = (AXUIElementRef) CFArrayGetValueAtIndex(_children, i);
-            AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
-            if (_element_role) {
-                active = CFEqual(_element_role, kAXGroupRole) && titleEquals(_element, @[Launchpad]);
-                CFRelease(_element_role);
-            }
-        }
-        CFRelease(_children);
-    }
-
-    if (verbose && active) { NSLog(@"Launchpad is active"); }
-    return active;
-}
-
 AXUIElementRef get_raisable_window(AXUIElementRef _element, CGPoint point, int count) {
     AXUIElementRef _window = NULL;
     if (_element) {
@@ -317,12 +295,10 @@ AXUIElementRef get_raisable_window(AXUIElementRef _element, CGPoint point, int c
             AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
             bool check_attributes = !_element_role;
             if (_element_role) {
-                if (CFEqual(_element_role, kAXDockItemRole) ||
-                    CFEqual(_element_role, kAXMenuItemRole) ||
+                if (CFEqual(_element_role, kAXMenuItemRole) ||
                     CFEqual(_element_role, kAXMenuRole) ||
                     CFEqual(_element_role, kAXMenuBarRole) ||
-                    CFEqual(_element_role, kAXMenuBarItemRole) ||
-                    CFEqual(_element_role, kAXPopUpButtonRole)) {
+                    CFEqual(_element_role, kAXMenuBarItemRole)) {
                     CFRelease(_element_role);
                     CFRelease(_element);
                 } else if (
@@ -333,8 +309,7 @@ AXUIElementRef get_raisable_window(AXUIElementRef _element, CGPoint point, int c
                     _window = _element;
                 } else if (CFEqual(_element_role, kAXApplicationRole)) {
                     CFRelease(_element_role);
-                    bool xquartz = titleEquals(_element, @[XQuartz]);
-                    if (xquartz) {
+                    if (titleEquals(_element, @[XQuartz])) {
                         pid_t application_pid;
                         if (AXUIElementGetPid(_element, &application_pid) == kAXErrorSuccess) {
                             pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
@@ -346,8 +321,9 @@ AXUIElementRef get_raisable_window(AXUIElementRef _element, CGPoint point, int c
                             }
                         }
                         CFRelease(_element);
-                    }
-                    check_attributes = !xquartz;
+                    } else if (titleEquals(_element, @[Dock])) {
+                        CFRelease(_element);
+                    } else { check_attributes = true; }
                 } else {
                     CFRelease(_element_role);
                     check_attributes = true;
@@ -356,10 +332,11 @@ AXUIElementRef get_raisable_window(AXUIElementRef _element, CGPoint point, int c
 
             if (check_attributes) {
                 AXUIElementCopyAttributeValue(_element, kAXParentAttribute, (CFTypeRef *) &_window);
+                bool no_parent = !_window;
                 _window = get_raisable_window(_window, point, ++count);
                 if (!_window) {
                     AXUIElementCopyAttributeValue(_element, kAXWindowAttribute, (CFTypeRef *) &_window);
-                    if (!_window) { _window = fallback(point); }
+                    if (!_window && no_parent) { _window = fallback(point); }
                 }
                 CFRelease(_element);
             }
@@ -472,20 +449,6 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
     return contained;
 }
 
-AXUIElementRef findDockApplication() {
-    AXUIElementRef _dock = NULL;
-    NSArray * _apps = [[NSWorkspace sharedWorkspace] runningApplications];
-    for (NSRunningApplication * app in _apps) {
-        if ([app.bundleIdentifier isEqual: Dock]) {
-            _dock = AXUIElementCreateApplication(app.processIdentifier);
-            break;
-        }
-    }
-
-    if (verbose && !_dock) { NSLog(@"Dock application isn't running"); }
-    return _dock;
-}
-
 CGPoint findDesktopOrigin() {
     CGPoint origin = {0, 0};
     NSScreen * main_screen = NSScreen.screens[0];
@@ -527,7 +490,7 @@ inline bool main_window(AXUIElementRef _app, AXUIElementRef _window) {
 
     main_window = main_window && (
         !titleEquals(_window, @[NoTitle]) ||
-        titleEquals(_app, @[@"Finder"]) ||
+        titleEquals(_app, @[Finder]) ||
         titleEquals(_app, mainWindowAppsWithoutTitle));
 
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
@@ -810,7 +773,7 @@ bool appActivated() {
     CFRelease(_frontmostApp);
 
     if (verbose) { NSLog(@"BundleIdentifier: %@", frontmostApp.bundleIdentifier); }
-    bool finder_app = [frontmostApp.bundleIdentifier isEqual: Finder];
+    bool finder_app = [frontmostApp.bundleIdentifier isEqual: FinderBundleId];
     if (finder_app) {
         if (_activatedWindow) {
             if (desktop_window(_activatedWindow)) {
@@ -952,8 +915,7 @@ void onTick() {
     if (mouseMoved || delayTicks || raiseTimes) {
         // don't raise for as long as something is being dragged (resizing a window for instance)
         bool abort = CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft) ||
-            CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight) ||
-            launchpad_active();
+            CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight);
 
         if (!abort && disableKey) {
             CGEventRef _keyDownEvent = CGEventCreateKeyboardEvent(NULL, 0, true);
@@ -1271,7 +1233,6 @@ int main(int argc, const char * argv[]) {
             [workspaceWatcher onTick: [NSNumber numberWithFloat: pollMillis/1000.0]];
         }
 
-        _dock_app = findDockApplication();
         desktopOrigin = findDesktopOrigin();
         [[NSApplication sharedApplication] run];
     }

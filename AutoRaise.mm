@@ -100,14 +100,15 @@ static char pathBuffer[PROC_PIDPATHINFO_MAXSIZE];
 static bool activated_by_task_switcher = false;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
+static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
 static NSArray * stayFocusedBundleIds = NULL;
+static const NSString * DockBundleId = @"com.apple.dock";
 static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
 static const NSString * BartenderBar = @"Bartender Bar";
 static const NSString * XQuartz = @"XQuartz";
 static const NSString * Finder = @"Finder";
-static const NSString * Dock = @"Dock";
 static const NSString * NoTitle = @"";
 static CGPoint desktopOrigin = {0, 0};
 static CGPoint oldPoint = {0, 0};
@@ -204,15 +205,28 @@ inline void raiseAndActivate(AXUIElementRef _window, pid_t window_pid) {
 }
 
 // TODO: does not take into account different languages
-inline bool titleEquals(AXUIElementRef _element, NSArray * _titles) {
+inline bool titleEquals(AXUIElementRef _element, NSArray * _titles, bool logTitle = false) {
     bool equal = false;
     CFStringRef _elementTitle = NULL;
     AXUIElementCopyAttributeValue(_element, kAXTitleAttribute, (CFTypeRef *) &_elementTitle);
+    if (logTitle) { NSLog(@"element title: %@", _elementTitle); }
     if (_elementTitle) {
         equal = [_titles containsObject: (__bridge NSString *) _elementTitle];
         CFRelease(_elementTitle);
     } else { equal = [_titles containsObject: NoTitle]; }
     return equal;
+}
+
+inline bool dock_active() {
+    bool active = false;
+    AXUIElementRef _focusedUIElement = NULL;
+    AXUIElementCopyAttributeValue(_dock_app, kAXFocusedUIElementAttribute, (CFTypeRef *) &_focusedUIElement);
+    if (_focusedUIElement) {
+        active = true;
+        if (verbose) { NSLog(@"Dock is active"); }
+        CFRelease(_focusedUIElement);
+    }
+    return active;
 }
 
 NSDictionary * topwindow(CGPoint point) {
@@ -295,7 +309,8 @@ AXUIElementRef get_raisable_window(AXUIElementRef _element, CGPoint point, int c
             AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
             bool check_attributes = !_element_role;
             if (_element_role) {
-                if (CFEqual(_element_role, kAXMenuItemRole) ||
+                if (CFEqual(_element_role, kAXDockItemRole) ||
+                    CFEqual(_element_role, kAXMenuItemRole) ||
                     CFEqual(_element_role, kAXMenuRole) ||
                     CFEqual(_element_role, kAXMenuBarRole) ||
                     CFEqual(_element_role, kAXMenuBarItemRole)) {
@@ -320,8 +335,6 @@ AXUIElementRef get_raisable_window(AXUIElementRef _element, CGPoint point, int c
                                 activate(application_pid);
                             }
                         }
-                        CFRelease(_element);
-                    } else if (titleEquals(_element, @[Dock])) {
                         CFRelease(_element);
                     } else { check_attributes = true; }
                 } else {
@@ -447,6 +460,20 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
     }
 
     return contained;
+}
+
+AXUIElementRef findDockApplication() {
+    AXUIElementRef _dock = NULL;
+    NSArray * _apps = [[NSWorkspace sharedWorkspace] runningApplications];
+    for (NSRunningApplication * app in _apps) {
+        if ([app.bundleIdentifier isEqual: DockBundleId]) {
+            _dock = AXUIElementCreateApplication(app.processIdentifier);
+            break;
+        }
+    }
+
+    if (verbose && !_dock) { NSLog(@"Dock application isn't running"); }
+    return _dock;
 }
 
 CGPoint findDesktopOrigin() {
@@ -915,7 +942,8 @@ void onTick() {
     if (mouseMoved || delayTicks || raiseTimes) {
         // don't raise for as long as something is being dragged (resizing a window for instance)
         bool abort = CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft) ||
-            CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight);
+            CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight) ||
+            dock_active();
 
         if (!abort && disableKey) {
             CGEventRef _keyDownEvent = CGEventCreateKeyboardEvent(NULL, 0, true);
@@ -938,13 +966,12 @@ void onTick() {
                 bool needs_raise = true;
                 AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
 #ifdef FOCUS_FIRST
-                bool mouse_main_window_without_title = false;
                 bool temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = false;
                 if (delayCount && raiseDelayCount != 1 && titleEquals(_mouseWindow, @[NoTitle])) {
                     if (!titleEquals(_mouseWindowApp, mainWindowAppsWithoutTitle)) {
                         needs_raise = false;
                         if (verbose) { NSLog(@"Excluding window"); }
-                    } else { mouse_main_window_without_title = true; }
+                    }
                 } else
 #endif
                 if (titleEquals(_mouseWindow, @[BartenderBar])) {
@@ -992,10 +1019,7 @@ void onTick() {
                                         if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
                                             needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                         }
-                                        needs_raise = needs_raise && (
-                                            mouse_main_window_without_title ||
-                                            main_window(_frontmostApp, _focusedWindow)
-                                        );
+                                        needs_raise = needs_raise && main_window(_frontmostApp, _focusedWindow);
                                     }
                                     if (needs_raise) {
                                         OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
@@ -1233,6 +1257,7 @@ int main(int argc, const char * argv[]) {
             [workspaceWatcher onTick: [NSNumber numberWithFloat: pollMillis/1000.0]];
         }
 
+        _dock_app = findDockApplication();
         desktopOrigin = findDesktopOrigin();
         [[NSApplication sharedApplication] run];
     }

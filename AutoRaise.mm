@@ -91,7 +91,9 @@ extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
 static int raiseDelayCount = 0;
 static pid_t lastFocusedWindow_pid;
 static AXUIElementRef _lastFocusedWindow = NULL;
+static NSArray * allWindowsAreMainWindowsApps = @[@"Emacs", @"Finder"];
 static NSArray * jetBrainsAppsRaisingOnFocus = @[@"IntelliJ IDEA", @"PyCharm", @"WebStorm"];
+static const NSString * NoTitle = @"";
 #endif
 
 CFMachPortRef eventTap = NULL;
@@ -211,6 +213,9 @@ inline bool titleEquals(AXUIElementRef _element, NSArray * _titles, bool logTitl
         equal = [_titles containsObject: (__bridge NSString *) _elementTitle];
         CFRelease(_elementTitle);
     }
+#ifdef FOCUS_FIRST
+    else { equal = [_titles containsObject: NoTitle]; }
+#endif
     return equal;
 }
 
@@ -504,12 +509,15 @@ inline bool desktop_window(AXUIElementRef _window) {
 
 #ifdef FOCUS_FIRST
 inline bool main_window(AXUIElementRef _app, AXUIElementRef _window) {
-    bool main_window = false;
-    CFBooleanRef _result = NULL;
-    AXUIElementCopyAttributeValue(_window, kAXMainAttribute, (CFTypeRef *) &_result);
-    if (_result) {
-        main_window = CFEqual(_result, kCFBooleanTrue);
-        CFRelease(_result);
+    bool main_window = titleEquals(_app, allWindowsAreMainWindowsApps);
+    main_window = main_window && !titleEquals(_window, @[NoTitle]);
+    if (!main_window) {
+        CFBooleanRef _result = NULL;
+        AXUIElementCopyAttributeValue(_window, kAXMainAttribute, (CFTypeRef *) &_result);
+        if (_result) {
+            main_window = CFEqual(_result, kCFBooleanTrue);
+            CFRelease(_result);
+        }
     }
 
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
@@ -959,8 +967,9 @@ void onTick() {
                 AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
 #ifdef FOCUS_FIRST
                 bool temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = false;
-                if (delayCount && raiseDelayCount != 1 && !main_window(_mouseWindowApp, _mouseWindow)) {
-                    needs_raise = false;
+                if (delayCount && raiseDelayCount != 1) {
+                    needs_raise = main_window(_mouseWindowApp, _mouseWindow);
+                    if (verbose) { NSLog(@"Excluding window"); }
                 } else
 #endif
                 if (titleEquals(_mouseWindow, @[BartenderBar])) {

@@ -91,7 +91,7 @@ extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
 static int raiseDelayCount = 0;
 static pid_t lastFocusedWindow_pid;
 static AXUIElementRef _lastFocusedWindow = NULL;
-static NSArray * allWindowsAreMainWindowsApps = @[@"Emacs", @"Finder"];
+static NSArray * allWindowsAreMainWindowsApps = @[@"Emacs", @"Finder", @"DBeaver Community", @"Chrome"];
 static NSArray * jetBrainsAppsRaisingOnFocus = @[@"IntelliJ IDEA", @"PyCharm", @"WebStorm"];
 static const NSString * NoTitle = @"";
 #endif
@@ -509,7 +509,7 @@ inline bool desktop_window(AXUIElementRef _window) {
 
 #ifdef FOCUS_FIRST
 inline bool main_window(AXUIElementRef _app, AXUIElementRef _window) {
-    bool main_window = titleEquals(_app, allWindowsAreMainWindowsApps);
+    bool main_window = titleEquals(_app, allWindowsAreMainWindowsApps, true);
     main_window = main_window && !titleEquals(_window, @[NoTitle]);
     if (!main_window) {
         CFBooleanRef _result = NULL;

@@ -92,7 +92,7 @@ static int raiseDelayCount = 0;
 static pid_t lastFocusedWindow_pid;
 static AXUIElementRef _lastFocusedWindow = NULL;
 static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator"];
-static NSArray * jetBrainsAppsRaisingOnFocus = @[@"IntelliJ IDEA", @"PyCharm", @"WebStorm"];
+static NSArray * appsRaisingOnFocus = @[@"IntelliJ IDEA", @"PyCharm", @"WebStorm", @"DBeaver Community"];
 #endif
 
 CFMachPortRef eventTap = NULL;
@@ -966,7 +966,7 @@ void onTick() {
                 bool needs_raise = true;
                 AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
 #ifdef FOCUS_FIRST
-                bool temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = false;
+                bool temporary_workaround_for_apps_raising_subwindows_on_focus = false;
                 if (delayCount && raiseDelayCount != 1 && titleEquals(_mouseWindow, @[NoTitle])) {
                     if (!titleEquals(_mouseWindowApp, mainWindowAppsWithoutTitle)) {
                         needs_raise = false;
@@ -983,8 +983,8 @@ void onTick() {
                         if (verbose) { NSLog(@"Excluding app"); }
                     }
 #ifdef FOCUS_FIRST
-                    temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus =
-                        titleEquals(_mouseWindowApp, jetBrainsAppsRaisingOnFocus);
+                    temporary_workaround_for_apps_raising_subwindows_on_focus =
+                        titleEquals(_mouseWindowApp, appsRaisingOnFocus);
 #endif
                 }
                 CFRelease(_mouseWindowApp);
@@ -1016,7 +1016,7 @@ void onTick() {
                                     if (raiseDelayCount) {
                                         needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                     } else {
-                                        if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
+                                        if (temporary_workaround_for_apps_raising_subwindows_on_focus) {
                                             needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                         }
                                         needs_raise = needs_raise && main_window(_frontmostApp, _focusedWindow);

@@ -313,7 +313,8 @@ AXUIElementRef get_raisable_window(AXUIElementRef _element, CGPoint point, int c
                     CFEqual(_element_role, kAXMenuItemRole) ||
                     CFEqual(_element_role, kAXMenuRole) ||
                     CFEqual(_element_role, kAXMenuBarRole) ||
-                    CFEqual(_element_role, kAXMenuBarItemRole)) {
+                    CFEqual(_element_role, kAXMenuBarItemRole) ||
+                    CFEqual(_element_role, kAXPopUpButtonRole)) {
                     CFRelease(_element_role);
                     CFRelease(_element);
                 } else if (

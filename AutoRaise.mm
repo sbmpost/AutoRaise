@@ -107,6 +107,7 @@ static const NSString * DockBundleId = @"com.apple.dock";
 static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
 static const NSString * BartenderBar = @"Bartender Bar";
+static const NSString * Zim = @"Zim";
 static const NSString * XQuartz = @"XQuartz";
 static const NSString * Finder = @"Finder";
 static const NSString * NoTitle = @"";
@@ -974,7 +975,7 @@ void onTick() {
                     }
                 } else
 #endif
-                if (titleEquals(_mouseWindow, @[BartenderBar])) {
+                if (titleEquals(_mouseWindow, @[BartenderBar, Zim])) {
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }
                 } else {

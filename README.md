@@ -11,8 +11,8 @@ See also [on stackoverflow](https://stackoverflow.com/questions/98310/focus-foll
 3. In finder, look for mounted disk image on side bar at left.
 4. Drag the AutoRaise.app into the Applications folder.
 5. Then open AutoRaise from Applications.
-6. Left click the menu bar balloon at top to give permissions to AutoRaise in System/Accessibility
-7. Right click the menu bar balloon at top, then select preferences
+6. Left click the menu bar balloon at top to give permissions to AutoRaise in System/Accessibility.
+7. Right click the menu bar balloon at top, then select preferences.
 
 *Important*: When you enable Accessibility in System Preferences, if you see an older AutoRaise item with balloon icon in the
 Accessibility pane, first remove it **completely** (clicking the minus). Then stop and start AutoRaise by left clicking the balloon

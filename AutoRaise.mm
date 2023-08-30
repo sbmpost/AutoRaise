@@ -107,7 +107,7 @@ static const NSString * DockBundleId = @"com.apple.dock";
 static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
 static const NSString * BartenderBar = @"Bartender Bar";
-static const NSString * SearchResults = @"Search results"; // App Store
+static const NSString * AppStoreSearchResults = @"Search results";
 static const NSString * Zim = @"Zim";
 static const NSString * XQuartz = @"XQuartz";
 static const NSString * Finder = @"Finder";
@@ -981,7 +981,8 @@ void onTick() {
                     if (verbose && !needs_raise) { NSLog(@"Excluding window"); }
                 } else
 #endif
-                if (titleEquals(_mouseWindow, @[BartenderBar, Zim, SearchResults])) {
+                // TODO: make these window title exceptions an ignoreWindowTitles setting.
+                if (titleEquals(_mouseWindow, @[BartenderBar, Zim, AppStoreSearchResults])) {
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }
                 } else {

@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "3.9"
+#define AUTORAISE_VERSION "4.0"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -107,6 +107,7 @@ static const NSString * DockBundleId = @"com.apple.dock";
 static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
 static const NSString * BartenderBar = @"Bartender Bar";
+static const NSString * SearchResults = @"Search results"; // App Store
 static const NSString * Zim = @"Zim";
 static const NSString * XQuartz = @"XQuartz";
 static const NSString * Finder = @"Finder";
@@ -188,7 +189,7 @@ void window_manager_focus_window_without_raise(
 inline void activate(pid_t pid) {
     if (verbose) { NSLog(@"Activate"); }
 #if MAC_OS_X_VERSION_MIN_REQUIRED < __MAC_11_06_0 or OLD_ACTIVATION_METHOD
-    // Temporary solution as NSRunningApplication does not work properly on OSX 11.1
+    // Temporary solution as activateWithOptions does not work properly on OSX 11.1
     ProcessSerialNumber process;
     OSStatus error = GetProcessForPID(pid, &process);
     if (!error) { SetFrontProcessWithOptions(&process, kSetFrontProcessFrontWindowOnly); }
@@ -507,7 +508,7 @@ inline bool desktop_window(AXUIElementRef _window) {
 }
 
 #ifdef FOCUS_FIRST
-inline bool main_window(AXUIElementRef _app, AXUIElementRef _window) {
+inline bool main_window(AXUIElementRef _app, AXUIElementRef _window, bool chrome_app) {
     bool main_window = false;
     CFBooleanRef _result = NULL;
     AXUIElementCopyAttributeValue(_window, kAXMainAttribute, (CFTypeRef *) &_result);
@@ -516,13 +517,18 @@ inline bool main_window(AXUIElementRef _app, AXUIElementRef _window) {
         CFRelease(_result);
     }
 
-    main_window = main_window && (
+    main_window = main_window && (chrome_app ||
         !titleEquals(_window, @[NoTitle]) ||
         titleEquals(_app, @[Finder]) ||
         titleEquals(_app, mainWindowAppsWithoutTitle));
 
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
     return main_window;
+}
+
+inline bool is_chrome_app(NSString * bundleIdentifier) {
+    NSArray * components = [bundleIdentifier componentsSeparatedByString: @"."];
+    return components.count > 4 && [components[2] isEqual: @"Chrome"] && [components[3] isEqual: @"app"];
 }
 #endif
 
@@ -969,13 +975,13 @@ void onTick() {
 #ifdef FOCUS_FIRST
                 bool temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = false;
                 if (delayCount && raiseDelayCount != 1 && titleEquals(_mouseWindow, @[NoTitle])) {
-                    if (!titleEquals(_mouseWindowApp, mainWindowAppsWithoutTitle)) {
-                        needs_raise = false;
-                        if (verbose) { NSLog(@"Excluding window"); }
-                    }
+                    needs_raise = main_window(_mouseWindowApp, _mouseWindow, is_chrome_app(
+                        [NSRunningApplication runningApplicationWithProcessIdentifier:
+                        mouseWindow_pid].bundleIdentifier));
+                    if (verbose && !needs_raise) { NSLog(@"Excluding window"); }
                 } else
 #endif
-                if (titleEquals(_mouseWindow, @[BartenderBar, Zim])) {
+                if (titleEquals(_mouseWindow, @[BartenderBar, Zim, SearchResults])) {
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }
                 } else {
@@ -1020,7 +1026,8 @@ void onTick() {
                                         if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
                                             needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                         }
-                                        needs_raise = needs_raise && main_window(_frontmostApp, _focusedWindow);
+                                        needs_raise = needs_raise && main_window(_frontmostApp, _focusedWindow,
+                                            is_chrome_app(frontmostApp.bundleIdentifier));
                                     }
                                     if (needs_raise) {
                                         OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);

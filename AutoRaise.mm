@@ -92,7 +92,6 @@ static int raiseDelayCount = 0;
 static pid_t lastFocusedWindow_pid;
 static AXUIElementRef _lastFocusedWindow = NULL;
 static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator"];
-static NSArray * jetBrainsAppsRaisingOnFocus = @[@"IntelliJ IDEA", @"PyCharm", @"WebStorm"];
 #endif
 
 CFMachPortRef eventTap = NULL;
@@ -529,6 +528,11 @@ inline bool main_window(AXUIElementRef _app, AXUIElementRef _window, bool chrome
 inline bool is_chrome_app(NSString * bundleIdentifier) {
     NSArray * components = [bundleIdentifier componentsSeparatedByString: @"."];
     return components.count > 4 && [components[2] isEqual: @"Chrome"] && [components[3] isEqual: @"app"];
+}
+
+inline bool is_jetbrains_app(NSString * bundleIdentifier) {
+    NSArray * components = [bundleIdentifier componentsSeparatedByString: @"."];
+    return components.count > 2 && [components[0] isEqual: @"com"] && [components[1] isEqual: @"jetbrains"];
 }
 #endif
 
@@ -991,8 +995,9 @@ void onTick() {
                         if (verbose) { NSLog(@"Excluding app"); }
                     }
 #ifdef FOCUS_FIRST
-                    temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus =
-                        titleEquals(_mouseWindowApp, jetBrainsAppsRaisingOnFocus);
+                    temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = is_jetbrains_app(
+                        [NSRunningApplication runningApplicationWithProcessIdentifier:
+                        mouseWindow_pid].bundleIdentifier);
 #endif
                 }
                 CFRelease(_mouseWindowApp);

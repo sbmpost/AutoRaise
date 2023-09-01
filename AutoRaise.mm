@@ -963,6 +963,9 @@ void onTick() {
             abort = (flags & disableKey) == disableKey;
         }
 
+        NSRunningApplication *frontmostApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
+        abort = abort || [stayFocusedBundleIds containsObject: frontmostApp.bundleIdentifier];
+
         if (abort) {
             if (verbose) { NSLog(@"Abort focus/raise"); }
             raiseTimes = 0;
@@ -1010,46 +1013,42 @@ void onTick() {
 #endif
                 if (needs_raise) {
                     _AXUIElementGetWindow(_mouseWindow, &mouseWindow_id);
-                    NSRunningApplication *frontmostApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
-                    needs_raise = ![stayFocusedBundleIds containsObject: frontmostApp.bundleIdentifier];
-                    if (needs_raise) {
-                        pid_t frontmost_pid = frontmostApp.processIdentifier;
-                        AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
-                        if (_frontmostApp) {
-                            AXUIElementRef _focusedWindow = NULL;
-                            AXUIElementCopyAttributeValue(
-                                _frontmostApp,
-                                kAXFocusedWindowAttribute,
-                                (CFTypeRef *) &_focusedWindow);
-                            if (_focusedWindow) {
-                                _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
-                                needs_raise = mouseWindow_id != focusedWindow_id;
+                    pid_t frontmost_pid = frontmostApp.processIdentifier;
+                    AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
+                    if (_frontmostApp) {
+                        AXUIElementRef _focusedWindow = NULL;
+                        AXUIElementCopyAttributeValue(
+                            _frontmostApp,
+                            kAXFocusedWindowAttribute,
+                            (CFTypeRef *) &_focusedWindow);
+                        if (_focusedWindow) {
+                            _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
+                            needs_raise = mouseWindow_id != focusedWindow_id;
 #ifdef FOCUS_FIRST
-                                if (delayCount && raiseDelayCount != 1) {
-                                    if (raiseDelayCount) {
-                                        needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-                                    } else {
-                                        if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
-                                            needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-                                        }
-                                        needs_raise = needs_raise && main_window(_frontmostApp, _focusedWindow,
-                                            is_chrome_app(frontmostApp.bundleIdentifier));
-                                    }
-                                    if (needs_raise) {
-                                        OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
-                                        if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
-                                    }
+                            if (delayCount && raiseDelayCount != 1) {
+                                if (raiseDelayCount) {
+                                    needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                 } else {
-#endif
-                                needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-#ifdef FOCUS_FIRST
+                                    if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
+                                        needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+                                    }
+                                    needs_raise = needs_raise && main_window(_frontmostApp, _focusedWindow,
+                                        is_chrome_app(frontmostApp.bundleIdentifier));
                                 }
+                                if (needs_raise) {
+                                    OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
+                                    if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
+                                }
+                            } else {
 #endif
-                                CFRelease(_focusedWindow);
+                            needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+#ifdef FOCUS_FIRST
                             }
-                            CFRelease(_frontmostApp);
+#endif
+                            CFRelease(_focusedWindow);
                         }
-                    } else if (verbose) { NSLog(@"Stay focused"); }
+                        CFRelease(_frontmostApp);
+                    }
                 }
 
                 if (needs_raise) {

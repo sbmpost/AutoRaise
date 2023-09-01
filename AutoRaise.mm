@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "3.9"
+#define AUTORAISE_VERSION "4.0"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -92,7 +92,6 @@ static int raiseDelayCount = 0;
 static pid_t lastFocusedWindow_pid;
 static AXUIElementRef _lastFocusedWindow = NULL;
 static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator"];
-static NSArray * jetBrainsAppsRaisingOnFocus = @[@"IntelliJ IDEA", @"PyCharm", @"WebStorm"];
 #endif
 
 CFMachPortRef eventTap = NULL;
@@ -107,6 +106,8 @@ static const NSString * DockBundleId = @"com.apple.dock";
 static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
 static const NSString * BartenderBar = @"Bartender Bar";
+static const NSString * AppStoreSearchResults = @"Search results";
+static const NSString * Zim = @"Zim";
 static const NSString * XQuartz = @"XQuartz";
 static const NSString * Finder = @"Finder";
 static const NSString * NoTitle = @"";
@@ -187,7 +188,7 @@ void window_manager_focus_window_without_raise(
 inline void activate(pid_t pid) {
     if (verbose) { NSLog(@"Activate"); }
 #if MAC_OS_X_VERSION_MIN_REQUIRED < __MAC_11_06_0 or OLD_ACTIVATION_METHOD
-    // Temporary solution as NSRunningApplication does not work properly on OSX 11.1
+    // Temporary solution as activateWithOptions does not work properly on OSX 11.1
     ProcessSerialNumber process;
     OSStatus error = GetProcessForPID(pid, &process);
     if (!error) { SetFrontProcessWithOptions(&process, kSetFrontProcessFrontWindowOnly); }
@@ -506,7 +507,7 @@ inline bool desktop_window(AXUIElementRef _window) {
 }
 
 #ifdef FOCUS_FIRST
-inline bool main_window(AXUIElementRef _app, AXUIElementRef _window) {
+inline bool main_window(AXUIElementRef _app, AXUIElementRef _window, bool chrome_app) {
     bool main_window = false;
     CFBooleanRef _result = NULL;
     AXUIElementCopyAttributeValue(_window, kAXMainAttribute, (CFTypeRef *) &_result);
@@ -515,13 +516,23 @@ inline bool main_window(AXUIElementRef _app, AXUIElementRef _window) {
         CFRelease(_result);
     }
 
-    main_window = main_window && (
+    main_window = main_window && (chrome_app ||
         !titleEquals(_window, @[NoTitle]) ||
         titleEquals(_app, @[Finder]) ||
         titleEquals(_app, mainWindowAppsWithoutTitle));
 
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
     return main_window;
+}
+
+inline bool is_chrome_app(NSString * bundleIdentifier) {
+    NSArray * components = [bundleIdentifier componentsSeparatedByString: @"."];
+    return components.count > 4 && [components[2] isEqual: @"Chrome"] && [components[3] isEqual: @"app"];
+}
+
+inline bool is_jetbrains_app(NSString * bundleIdentifier) {
+    NSArray * components = [bundleIdentifier componentsSeparatedByString: @"."];
+    return components.count > 2 && [components[0] isEqual: @"com"] && [components[1] isEqual: @"jetbrains"];
 }
 #endif
 
@@ -952,6 +963,9 @@ void onTick() {
             abort = (flags & disableKey) == disableKey;
         }
 
+        NSRunningApplication *frontmostApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
+        abort = abort || [stayFocusedBundleIds containsObject: frontmostApp.bundleIdentifier];
+
         if (abort) {
             if (verbose) { NSLog(@"Abort focus/raise"); }
             raiseTimes = 0;
@@ -968,13 +982,14 @@ void onTick() {
 #ifdef FOCUS_FIRST
                 bool temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = false;
                 if (delayCount && raiseDelayCount != 1 && titleEquals(_mouseWindow, @[NoTitle])) {
-                    if (!titleEquals(_mouseWindowApp, mainWindowAppsWithoutTitle)) {
-                        needs_raise = false;
-                        if (verbose) { NSLog(@"Excluding window"); }
-                    }
+                    needs_raise = main_window(_mouseWindowApp, _mouseWindow, is_chrome_app(
+                        [NSRunningApplication runningApplicationWithProcessIdentifier:
+                        mouseWindow_pid].bundleIdentifier));
+                    if (verbose && !needs_raise) { NSLog(@"Excluding window"); }
                 } else
 #endif
-                if (titleEquals(_mouseWindow, @[BartenderBar])) {
+                // TODO: make these window title exceptions an ignoreWindowTitles setting.
+                if (titleEquals(_mouseWindow, @[BartenderBar, Zim, AppStoreSearchResults])) {
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }
                 } else {
@@ -983,8 +998,9 @@ void onTick() {
                         if (verbose) { NSLog(@"Excluding app"); }
                     }
 #ifdef FOCUS_FIRST
-                    temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus =
-                        titleEquals(_mouseWindowApp, jetBrainsAppsRaisingOnFocus);
+                    temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = is_jetbrains_app(
+                        [NSRunningApplication runningApplicationWithProcessIdentifier:
+                        mouseWindow_pid].bundleIdentifier);
 #endif
                 }
                 CFRelease(_mouseWindowApp);
@@ -997,45 +1013,42 @@ void onTick() {
 #endif
                 if (needs_raise) {
                     _AXUIElementGetWindow(_mouseWindow, &mouseWindow_id);
-                    NSRunningApplication *frontmostApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
-                    needs_raise = ![stayFocusedBundleIds containsObject: frontmostApp.bundleIdentifier];
-                    if (needs_raise) {
-                        pid_t frontmost_pid = frontmostApp.processIdentifier;
-                        AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
-                        if (_frontmostApp) {
-                            AXUIElementRef _focusedWindow = NULL;
-                            AXUIElementCopyAttributeValue(
-                                _frontmostApp,
-                                kAXFocusedWindowAttribute,
-                                (CFTypeRef *) &_focusedWindow);
-                            if (_focusedWindow) {
-                                _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
-                                needs_raise = mouseWindow_id != focusedWindow_id;
+                    pid_t frontmost_pid = frontmostApp.processIdentifier;
+                    AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
+                    if (_frontmostApp) {
+                        AXUIElementRef _focusedWindow = NULL;
+                        AXUIElementCopyAttributeValue(
+                            _frontmostApp,
+                            kAXFocusedWindowAttribute,
+                            (CFTypeRef *) &_focusedWindow);
+                        if (_focusedWindow) {
+                            _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
+                            needs_raise = mouseWindow_id != focusedWindow_id;
 #ifdef FOCUS_FIRST
-                                if (delayCount && raiseDelayCount != 1) {
-                                    if (raiseDelayCount) {
-                                        needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-                                    } else {
-                                        if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
-                                            needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-                                        }
-                                        needs_raise = needs_raise && main_window(_frontmostApp, _focusedWindow);
-                                    }
-                                    if (needs_raise) {
-                                        OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
-                                        if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
-                                    }
+                            if (delayCount && raiseDelayCount != 1) {
+                                if (raiseDelayCount) {
+                                    needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                 } else {
-#endif
-                                needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-#ifdef FOCUS_FIRST
+                                    if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
+                                        needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+                                    }
+                                    needs_raise = needs_raise && main_window(_frontmostApp, _focusedWindow,
+                                        is_chrome_app(frontmostApp.bundleIdentifier));
                                 }
+                                if (needs_raise) {
+                                    OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
+                                    if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
+                                }
+                            } else {
 #endif
-                                CFRelease(_focusedWindow);
+                            needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+#ifdef FOCUS_FIRST
                             }
-                            CFRelease(_frontmostApp);
+#endif
+                            CFRelease(_focusedWindow);
                         }
-                    } else if (verbose) { NSLog(@"Stay focused"); }
+                        CFRelease(_frontmostApp);
+                    }
                 }
 
                 if (needs_raise) {

@@ -1067,7 +1067,8 @@ void onTick() {
                                 if (_element_sub_role) {
                                     floating_window =
                                         CFEqual(_element_sub_role, kAXFloatingWindowSubrole) ||
-                                        CFEqual(_element_sub_role, kAXSystemFloatingWindowSubrole);
+                                        CFEqual(_element_sub_role, kAXSystemFloatingWindowSubrole) ||
+                                        CFEqual(_element_sub_role, kAXUnknownSubrole);
                                     CFRelease(_element_sub_role);
                                 }
                                 if (!floating_window) {

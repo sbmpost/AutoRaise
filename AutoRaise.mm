@@ -981,15 +981,14 @@ void onTick() {
                 AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
 #ifdef FOCUS_FIRST
                 bool temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = false;
-                if (delayCount && raiseDelayCount != 1 && titleEquals(_mouseWindow, @[NoTitle])) {
+#endif
+                if (titleEquals(_mouseWindow, @[NoTitle])) {
                     needs_raise = main_window(_mouseWindowApp, _mouseWindow, is_chrome_app(
                         [NSRunningApplication runningApplicationWithProcessIdentifier:
                         mouseWindow_pid].bundleIdentifier));
                     if (verbose && !needs_raise) { NSLog(@"Excluding window"); }
-                } else
-#endif
-                // TODO: make these window title exceptions an ignoreWindowTitles setting.
-                if (titleEquals(_mouseWindow, @[BartenderBar, Zim, AppStoreSearchResults])) {
+                } else if (titleEquals(_mouseWindow, @[BartenderBar, Zim, AppStoreSearchResults])) {
+                    // TODO: make these window title exceptions an ignoreWindowTitles setting.
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }
                 } else {
@@ -1024,27 +1023,21 @@ void onTick() {
                         if (_focusedWindow) {
                             _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
                             needs_raise = mouseWindow_id != focusedWindow_id;
+                            if (raiseDelayCount) {
+                                needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+                            } else {
 #ifdef FOCUS_FIRST
-                            if (delayCount && raiseDelayCount != 1) {
-                                if (raiseDelayCount) {
+                                if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
                                     needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-                                } else {
-                                    if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
-                                        needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-                                    }
-                                    needs_raise = needs_raise && main_window(_frontmostApp, _focusedWindow,
-                                        is_chrome_app(frontmostApp.bundleIdentifier));
                                 }
+#endif
+                                needs_raise = needs_raise && main_window(_frontmostApp, _focusedWindow,
+                                    is_chrome_app(frontmostApp.bundleIdentifier));
                                 if (needs_raise) {
                                     OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
                                     if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
                                 }
-                            } else {
-#endif
-                            needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-#ifdef FOCUS_FIRST
                             }
-#endif
                             CFRelease(_focusedWindow);
                         }
                         CFRelease(_frontmostApp);

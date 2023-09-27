@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "4.0"
+#define AUTORAISE_VERSION "4.1"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600
@@ -139,17 +139,21 @@ static int disableKey = 0;
 // https://github.com/koekeishiya/yabai and slightly modified. See also:
 // https://github.com/Hammerspoon/hammerspoon/issues/370#issuecomment-545545468
 void window_manager_make_key_window(ProcessSerialNumber * _window_psn, uint32_t window_id) {
-    uint8_t bytes1[0xf8] = { [0x04] = 0xf8, [0x08] = 0x01, [0x3a] = 0x10 };
-    uint8_t bytes2[0xf8] = { [0x04] = 0xf8, [0x08] = 0x02, [0x3a] = 0x10 };
+    uint8_t * bytes = (uint8_t *) malloc(0xf8);
+    memset(bytes, 0, 0xf8);
 
-    memcpy(bytes1 + 0x3c, &window_id, sizeof(uint32_t));
-    memset(bytes1 + 0x20, 0xFF, 0x10);
+    bytes[0x04] = 0xf8;
+    bytes[0x3a] = 0x10;
 
-    memcpy(bytes2 + 0x3c, &window_id, sizeof(uint32_t));
-    memset(bytes2 + 0x20, 0xFF, 0x10);
+    memcpy(bytes + 0x3c, &window_id, sizeof(uint32_t));
+    memset(bytes + 0x20, 0xFF, 0x10);
 
-    SLPSPostEventRecordTo(_window_psn, bytes1);
-    SLPSPostEventRecordTo(_window_psn, bytes2);
+    bytes[0x08] = 0x01;
+    SLPSPostEventRecordTo(_window_psn, bytes);
+
+    bytes[0x08] = 0x02;
+    SLPSPostEventRecordTo(_window_psn, bytes);
+    free(bytes);
 }
 
 void window_manager_focus_window_without_raise(
@@ -162,9 +166,16 @@ void window_manager_focus_window_without_raise(
         SameProcess(_window_psn, _focused_window_psn, &same_process);
         if (same_process) {
             if (verbose) { NSLog(@"Same process"); }
-            uint8_t bytes1[0xf8] = { [0x04] = 0xf8, [0x08] = 0x0d, [0x8a] = 0x02 };
-            memcpy(bytes1 + 0x3c, &focused_window_id, sizeof(uint32_t));
-            SLPSPostEventRecordTo(_focused_window_psn, bytes1);
+            uint8_t * bytes = (uint8_t *) malloc(0xf8);
+            memset(bytes, 0, 0xf8);
+
+            bytes[0x04] = 0xf8;
+            bytes[0x08] = 0x0d;
+            memcpy(bytes + 0x3c, &focused_window_id, sizeof(uint32_t));
+            memcpy(bytes + 0x3c, &window_id, sizeof(uint32_t));
+
+            bytes[0x8a] = 0x02;
+            SLPSPostEventRecordTo(_focused_window_psn, bytes);
 
             // @hack
             // Artificially delay the activation by 1ms. This is necessary
@@ -172,9 +183,9 @@ void window_manager_focus_window_without_raise(
             // the events appear instantaneously.
             usleep(10000);
 
-            uint8_t bytes2[0xf8] = { [0x04] = 0xf8, [0x08] = 0x0d, [0x8a] = 0x01 };
-            memcpy(bytes2 + 0x3c, &window_id, sizeof(uint32_t));
-            SLPSPostEventRecordTo(_window_psn, bytes2);
+            bytes[0x8a] = 0x01;
+            SLPSPostEventRecordTo(_window_psn, bytes);
+            free(bytes);
         }
     }
 

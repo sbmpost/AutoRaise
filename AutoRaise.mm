@@ -1050,7 +1050,7 @@ void onTick() {
                                 }
                             }
                             CFRelease(_focusedWindow);
-                        }
+                        } else { needs_raise = false; }
                         CFRelease(_frontmostApp);
                     }
                 }

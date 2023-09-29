@@ -28,11 +28,8 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "4.1"
+#define AUTORAISE_VERSION "4.2"
 #define STACK_THRESHOLD 20
-
-#define __MAC_11_06_0 110600
-#define __MAC_12_00_0 120000
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST
 #if SKYLIGHT_AVAILABLE
@@ -51,11 +48,9 @@
 // visual area to make the connected window raise. This new OSX 'feature' also introduces
 // unwanted raising of windows when visually connected to the top menu bar. To solve this
 // we correct the mouse position before determining which window is underneath the mouse.
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_12_00_0
 #define WINDOW_CORRECTION 3
 #define MENUBAR_CORRECTION 8
 static CGPoint oldCorrectedPoint = {0, 0};
-#endif
 
 // An activate delay of about 10 microseconds is just high enough to ensure we always
 // find the latest focused (main)window. This value should be kept as low as possible.
@@ -91,7 +86,6 @@ extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
 static int raiseDelayCount = 0;
 static pid_t lastFocusedWindow_pid;
 static AXUIElementRef _lastFocusedWindow = NULL;
-static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator"];
 #endif
 
 CFMachPortRef eventTap = NULL;
@@ -102,6 +96,7 @@ static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
 static NSArray * stayFocusedBundleIds = NULL;
+static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator"];
 static const NSString * DockBundleId = @"com.apple.dock";
 static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
@@ -198,12 +193,12 @@ void window_manager_focus_window_without_raise(
 
 inline void activate(pid_t pid) {
     if (verbose) { NSLog(@"Activate"); }
-#if MAC_OS_X_VERSION_MIN_REQUIRED < __MAC_11_06_0 or OLD_ACTIVATION_METHOD
-    // Temporary solution as activateWithOptions does not work properly on OSX 11.1
+#ifdef OLD_ACTIVATION_METHOD
     ProcessSerialNumber process;
     OSStatus error = GetProcessForPID(pid, &process);
     if (!error) { SetFrontProcessWithOptions(&process, kSetFrontProcessFrontWindowOnly); }
 #else
+    // Note activateWithOptions does not work properly on OSX 11.1
     [[NSRunningApplication runningApplicationWithProcessIdentifier: pid]
         activateWithOptions: NSApplicationActivateIgnoringOtherApps];
 #endif
@@ -517,7 +512,6 @@ inline bool desktop_window(AXUIElementRef _window) {
     return desktop_window;
 }
 
-#ifdef FOCUS_FIRST
 inline bool main_window(AXUIElementRef _app, AXUIElementRef _window, bool chrome_app) {
     bool main_window = false;
     CFBooleanRef _result = NULL;
@@ -536,18 +530,6 @@ inline bool main_window(AXUIElementRef _app, AXUIElementRef _window, bool chrome
     return main_window;
 }
 
-inline bool is_chrome_app(NSString * bundleIdentifier) {
-    NSArray * components = [bundleIdentifier componentsSeparatedByString: @"."];
-    return components.count > 4 && [components[2] isEqual: @"Chrome"] && [components[3] isEqual: @"app"];
-}
-
-inline bool is_jetbrains_app(NSString * bundleIdentifier) {
-    NSArray * components = [bundleIdentifier componentsSeparatedByString: @"."];
-    return components.count > 2 && [components[0] isEqual: @"com"] && [components[1] isEqual: @"jetbrains"];
-}
-#endif
-
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_12_00_0
 inline NSScreen * findScreen(CGPoint point) {
     NSScreen * main_screen = NSScreen.screens[0];
     point.y = NSMaxY(main_screen.frame) - point.y;
@@ -558,7 +540,19 @@ inline NSScreen * findScreen(CGPoint point) {
     }
     return NULL;
 }
+
+inline bool is_chrome_app(NSString * bundleIdentifier) {
+    NSArray * components = [bundleIdentifier componentsSeparatedByString: @"."];
+    return components.count > 4 && [components[2] isEqual: @"Chrome"] && [components[3] isEqual: @"app"];
+}
+
+#ifdef FOCUS_FIRST
+inline bool is_jetbrains_app(NSString * bundleIdentifier) {
+    NSArray * components = [bundleIdentifier componentsSeparatedByString: @"."];
+    return components.count > 2 && [components[0] isEqual: @"com"] && [components[1] isEqual: @"jetbrains"];
+}
 #endif
+
 //-----------------------------------------------notifications----------------------------------------------
 
 void spaceChanged();
@@ -910,30 +904,30 @@ void onTick() {
     // delayTicks = n -> delay started
     if (delayTicks > 1) { delayTicks--; }
 
-#if MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_12_00_0
-    // the correction should be applied before we return
-    // under certain conditions in the code after it. This
-    // ensures oldCorrectedPoint always has a recent value.
-    if (mouseMoved) {
-        NSScreen * screen = findScreen(mousePoint);
-        mousePoint.x += mouse_x_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
-        mousePoint.y += mouse_y_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
-        if (screen) {
-            float menuBarHeight =
-                NSHeight(screen.frame) - NSHeight(screen.visibleFrame) -
-                (screen.visibleFrame.origin.y - screen.frame.origin.y) - 1;
-            NSScreen * main_screen = NSScreen.screens[0];
-            float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
-            if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
-                if (verbose) { NSLog(@"Menu bar correction"); }
-                mousePoint.y = screenOriginY;
+    if (@available(macOS 12.00, *)) {
+        // the correction should be applied before we return
+        // under certain conditions in the code after it. This
+        // ensures oldCorrectedPoint always has a recent value.
+        if (mouseMoved) {
+            NSScreen * screen = findScreen(mousePoint);
+            mousePoint.x += mouse_x_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
+            mousePoint.y += mouse_y_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
+            if (screen) {
+                float menuBarHeight =
+                    NSHeight(screen.frame) - NSHeight(screen.visibleFrame) -
+                    (screen.visibleFrame.origin.y - screen.frame.origin.y) - 1;
+                NSScreen * main_screen = NSScreen.screens[0];
+                float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
+                if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
+                    if (verbose) { NSLog(@"Menu bar correction"); }
+                    mousePoint.y = screenOriginY;
+                }
             }
+            oldCorrectedPoint = mousePoint;
+        } else {
+             mousePoint = oldCorrectedPoint;
         }
-        oldCorrectedPoint = mousePoint;
-    } else {
-        mousePoint = oldCorrectedPoint;
     }
-#endif
 
     if (ignoreTimes) {
         ignoreTimes--;
@@ -1034,14 +1028,15 @@ void onTick() {
                         if (_focusedWindow) {
                             _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
                             needs_raise = mouseWindow_id != focusedWindow_id;
-                            if (raiseDelayCount) {
-                                needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-                            } else {
 #ifdef FOCUS_FIRST
+                            if (raiseDelayCount) {
+#endif
+                                needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+#ifdef FOCUS_FIRST
+                            } else {
                                 if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
                                     needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                 }
-#endif
                                 needs_raise = needs_raise && main_window(_frontmostApp, _focusedWindow,
                                     is_chrome_app(frontmostApp.bundleIdentifier));
                                 if (needs_raise) {
@@ -1049,8 +1044,9 @@ void onTick() {
                                     if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
                                 }
                             }
+#endif
                             CFRelease(_focusedWindow);
-                        }
+                        } else { needs_raise = false; }
                         CFRelease(_frontmostApp);
                     }
                 }

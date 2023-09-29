@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "4.1"
+#define AUTORAISE_VERSION "4.2"
 #define STACK_THRESHOLD 20
 
 #define __MAC_11_06_0 110600

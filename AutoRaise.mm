@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "4.2"
+#define AUTORAISE_VERSION "4.3"
 #define STACK_THRESHOLD 20
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST
@@ -512,7 +512,7 @@ inline bool desktop_window(AXUIElementRef _window) {
     return desktop_window;
 }
 
-inline bool main_window(AXUIElementRef _app, AXUIElementRef _window, bool chrome_app) {
+inline bool is_main_window(AXUIElementRef _app, AXUIElementRef _window, bool chrome_app) {
     bool main_window = false;
     CFBooleanRef _result = NULL;
     AXUIElementCopyAttributeValue(_window, kAXMainAttribute, (CFTypeRef *) &_result);
@@ -988,7 +988,7 @@ void onTick() {
                 bool temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = false;
 #endif
                 if (titleEquals(_mouseWindow, @[NoTitle])) {
-                    needs_raise = main_window(_mouseWindowApp, _mouseWindow, is_chrome_app(
+                    needs_raise = is_main_window(_mouseWindowApp, _mouseWindow, is_chrome_app(
                         [NSRunningApplication runningApplicationWithProcessIdentifier:
                         mouseWindow_pid].bundleIdentifier));
                     if (verbose && !needs_raise) { NSLog(@"Excluding window"); }
@@ -1037,7 +1037,7 @@ void onTick() {
                                 if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
                                     needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                                 }
-                                needs_raise = needs_raise && main_window(_frontmostApp, _focusedWindow,
+                                needs_raise = needs_raise && is_main_window(_frontmostApp, _focusedWindow,
                                     is_chrome_app(frontmostApp.bundleIdentifier));
                                 if (needs_raise) {
                                     OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
@@ -1046,7 +1046,15 @@ void onTick() {
                             }
 #endif
                             CFRelease(_focusedWindow);
-                        } else { needs_raise = false; }
+                        } else {
+                            AXUIElementRef _activatedWindow = NULL;
+                            AXUIElementCopyAttributeValue(_frontmostApp,
+                                kAXMainWindowAttribute, (CFTypeRef *) &_activatedWindow);
+                            if (_activatedWindow) {
+                              needs_raise = false;
+                              CFRelease(_activatedWindow);
+                            }
+                        }
                         CFRelease(_frontmostApp);
                     }
                 }

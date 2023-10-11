@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "4.3"
+#define AUTORAISE_VERSION "4.4"
 #define STACK_THRESHOLD 20
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST
@@ -498,6 +498,8 @@ CGPoint findDesktopOrigin() {
 }
 
 inline NSScreen * findScreen(CGPoint point) {
+    NSScreen * main_screen = NSScreen.screens[0];
+    point.y = NSMaxY(main_screen.frame) - 1 - point.y;
     for (NSScreen * screen in [NSScreen screens]) {
         if (NSPointInRect(NSPointFromCGPoint(point), screen.frame)) {
             return screen;
@@ -536,12 +538,13 @@ inline bool is_full_screen(AXUIElementRef _window) {
                     CGSize cg_size;
                     if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size)) {
                         float menuBarHeight =
-                            NSHeight(screen.frame) - NSHeight(screen.visibleFrame) -
-                            (screen.visibleFrame.origin.y - screen.frame.origin.y) - 1;
+                            fmax(0, NSMaxY(screen.frame) - NSMaxY(screen.visibleFrame) - 1);
+                        NSScreen * main_screen = NSScreen.screens[0];
+                        float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
                         full_screen = cg_pos.x == NSMinX(screen.frame) &&
-                                      cg_pos.y == NSMinY(screen.frame) + menuBarHeight &&
-                                      cg_pos.x + cg_size.width == NSMaxX(screen.frame) &&
-                                      cg_pos.y + cg_size.height == NSMaxY(screen.frame);
+                                      cg_pos.y == screenOriginY + menuBarHeight &&
+                                      cg_size.width == NSWidth(screen.frame) &&
+                                      cg_size.height == NSHeight(screen.frame) - menuBarHeight;
                     }
                     CFRelease(_size);
                 }
@@ -942,16 +945,13 @@ void onTick() {
         // under certain conditions in the code after it. This
         // ensures oldCorrectedPoint always has a recent value.
         if (mouseMoved) {
-            CGPoint point = mousePoint;
-            NSScreen * main_screen = NSScreen.screens[0];
-            point.y = NSMaxY(main_screen.frame) - point.y;
-            NSScreen * screen = findScreen(point);
+            NSScreen * screen = findScreen(mousePoint);
             mousePoint.x += mouse_x_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
             mousePoint.y += mouse_y_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
             if (screen) {
                 float menuBarHeight =
-                    NSHeight(screen.frame) - NSHeight(screen.visibleFrame) -
-                    (screen.visibleFrame.origin.y - screen.frame.origin.y) - 1;
+                    fmax(0, NSMaxY(screen.frame) - NSMaxY(screen.visibleFrame) - 1);
+                NSScreen * main_screen = NSScreen.screens[0];
                 float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
                 if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
                     if (verbose) { NSLog(@"Menu bar correction"); }

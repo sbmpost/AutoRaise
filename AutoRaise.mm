@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "4.3"
+#define AUTORAISE_VERSION "4.5"
 #define STACK_THRESHOLD 20
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST
@@ -96,7 +96,7 @@ static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
 static NSArray * stayFocusedBundleIds = NULL;
-static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator"];
+static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator", @"Podcasts", @"Stickies Pro"];
 static const NSString * DockBundleId = @"com.apple.dock";
 static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
@@ -497,7 +497,18 @@ CGPoint findDesktopOrigin() {
     return origin;
 }
 
-inline bool desktop_window(AXUIElementRef _window) {
+inline NSScreen * findScreen(CGPoint point) {
+    NSScreen * main_screen = NSScreen.screens[0];
+    point.y = NSMaxY(main_screen.frame) - 1 - point.y;
+    for (NSScreen * screen in [NSScreen screens]) {
+        if (NSPointInRect(NSPointFromCGPoint(point), screen.frame)) {
+            return screen;
+        }
+    }
+    return NULL;
+}
+
+inline bool is_desktop_window(AXUIElementRef _window) {
     bool desktop_window = false;
     AXValueRef _pos = NULL;
     AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
@@ -510,6 +521,40 @@ inline bool desktop_window(AXUIElementRef _window) {
 
     if (verbose && desktop_window) { NSLog(@"Desktop window"); }
     return desktop_window;
+}
+
+inline bool is_full_screen(AXUIElementRef _window) {
+    bool full_screen = false;
+    AXValueRef _pos = NULL;
+    AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
+    if (_pos) {
+        CGPoint cg_pos;
+        if (AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
+            NSScreen * screen = findScreen(cg_pos);
+            if (screen) {
+                AXValueRef _size = NULL;
+                AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
+                if (_size) {
+                    CGSize cg_size;
+                    if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size)) {
+                        float menuBarHeight =
+                            fmax(0, NSMaxY(screen.frame) - NSMaxY(screen.visibleFrame) - 1);
+                        NSScreen * main_screen = NSScreen.screens[0];
+                        float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
+                        full_screen = cg_pos.x == NSMinX(screen.frame) &&
+                                      cg_pos.y == screenOriginY + menuBarHeight &&
+                                      cg_size.width == NSWidth(screen.frame) &&
+                                      cg_size.height == NSHeight(screen.frame) - menuBarHeight;
+                    }
+                    CFRelease(_size);
+                }
+            }
+        }
+        CFRelease(_pos);
+    }
+
+    if (verbose && full_screen) { NSLog(@"Full screen window"); }
+    return full_screen;
 }
 
 inline bool is_main_window(AXUIElementRef _app, AXUIElementRef _window, bool chrome_app) {
@@ -526,19 +571,10 @@ inline bool is_main_window(AXUIElementRef _app, AXUIElementRef _window, bool chr
         titleEquals(_app, @[Finder]) ||
         titleEquals(_app, mainWindowAppsWithoutTitle));
 
+    main_window = main_window || is_full_screen(_window);
+
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
     return main_window;
-}
-
-inline NSScreen * findScreen(CGPoint point) {
-    NSScreen * main_screen = NSScreen.screens[0];
-    point.y = NSMaxY(main_screen.frame) - point.y;
-    for (NSScreen * screen in [NSScreen screens]) {
-        if (NSPointInRect(NSPointFromCGPoint(point), screen.frame)) {
-            return screen;
-        }
-    }
-    return NULL;
 }
 
 inline bool is_chrome_app(NSString * bundleIdentifier) {
@@ -819,7 +855,7 @@ bool appActivated() {
     bool finder_app = [frontmostApp.bundleIdentifier isEqual: FinderBundleId];
     if (finder_app) {
         if (_activatedWindow) {
-            if (desktop_window(_activatedWindow)) {
+            if (is_desktop_window(_activatedWindow)) {
                 CFRelease(_activatedWindow);
                 _activatedWindow = _previousFinderWindow;
             } else {
@@ -914,8 +950,7 @@ void onTick() {
             mousePoint.y += mouse_y_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
             if (screen) {
                 float menuBarHeight =
-                    NSHeight(screen.frame) - NSHeight(screen.visibleFrame) -
-                    (screen.visibleFrame.origin.y - screen.frame.origin.y) - 1;
+                    fmax(0, NSMaxY(screen.frame) - NSMaxY(screen.visibleFrame) - 1);
                 NSScreen * main_screen = NSScreen.screens[0];
                 float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
                 if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
@@ -925,7 +960,7 @@ void onTick() {
             }
             oldCorrectedPoint = mousePoint;
         } else {
-             mousePoint = oldCorrectedPoint;
+            mousePoint = oldCorrectedPoint;
         }
     }
 

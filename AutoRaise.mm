@@ -89,6 +89,7 @@ static AXUIElementRef _lastFocusedWindow = NULL;
 #endif
 
 CFMachPortRef eventTap = NULL;
+static NSScreen * previousScreen = NULL;
 static char pathBuffer[PROC_PIDPATHINFO_MAXSIZE];
 static bool activated_by_task_switcher = false;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
@@ -113,6 +114,7 @@ static bool ignoreSpaceChanged = false;
 static bool spaceHasChanged = false;
 static bool appWasActivated = false;
 static bool altTaskSwitcher = false;
+static bool onScreenChangedOnly = true;
 static bool warpMouse = false;
 static bool verbose = false;
 static float warpX = 0.5;
@@ -506,6 +508,18 @@ inline NSScreen * findScreen(CGPoint point) {
         }
     }
     return NULL;
+}
+
+inline bool screenChanged(CGPoint point) {
+    bool changed = false;
+    NSScreen * screen = findScreen(point);
+    if (screen) {
+        changed = previousScreen != screen;
+        previousScreen = screen;
+    }
+
+    if (verbose && changed) { NSLog(@"Screen changed"); }
+    return changed;
 }
 
 inline bool is_desktop_window(AXUIElementRef _window) {
@@ -1015,6 +1029,13 @@ void onTick() {
 
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
         if (_mouseWindow) {
+            if (onScreenChangedOnly && (raiseTimes || delayCount == 1 || delayTicks == 1) &&
+                !is_desktop_window(_mouseWindow) && !screenChanged(mousePoint)) {
+                CFRelease(_mouseWindow);
+                raiseTimes = 0;
+                delayTicks = 0;
+                return;
+            }
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
                 bool needs_raise = true;

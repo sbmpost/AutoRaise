@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "4.5"
+#define AUTORAISE_VERSION "4.6"
 #define STACK_THRESHOLD 20
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST
@@ -96,7 +96,7 @@ static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
 static NSArray * stayFocusedBundleIds = NULL;
-static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator", @"Podcasts", @"Stickies Pro"];
+static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator", @"Podcasts", @"Stickies Pro", @"Reeder"];
 static const NSString * DockBundleId = @"com.apple.dock";
 static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";

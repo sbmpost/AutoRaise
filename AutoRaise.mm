@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "4.6"
+#define AUTORAISE_VERSION "4.7"
 #define STACK_THRESHOLD 20
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST
@@ -566,12 +566,12 @@ inline bool is_main_window(AXUIElementRef _app, AXUIElementRef _window, bool chr
         CFRelease(_result);
     }
 
-    main_window = main_window && (chrome_app ||
+    bool finder_app = titleEquals(_app, @[Finder]);
+    main_window = main_window && (chrome_app || finder_app ||
         !titleEquals(_window, @[NoTitle]) ||
-        titleEquals(_app, @[Finder]) ||
         titleEquals(_app, mainWindowAppsWithoutTitle));
 
-    main_window = main_window || is_full_screen(_window);
+    main_window = main_window || (!finder_app && is_full_screen(_window));
 
     if (verbose && !main_window) { NSLog(@"Not a main window"); }
     return main_window;

@@ -149,7 +149,7 @@ like so:
 
 The output should look something like this:
 
-    v4.5 by sbmpost(c) 2023, usage:
+    v4.7 by sbmpost(c) 2023, usage:
 
     AutoRaise
       -pollMillis <20, 30, 40, 50, ...>

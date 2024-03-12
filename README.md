@@ -77,6 +77,8 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
   - ignoreSpaceChanged: Do not immediately raise/focus after a space change. The default is false.
 
+  - invertIgnoreApps: Turns the ignoreApps parameter into an includeApps parameter. The default is false.
+
   - ignoreApps: Comma separated list of apps for which you would like to disable focus/raise.
 
   - stayFocusedBundleIds: Comma separated list of app bundle identifiers that shouldn't lose focus even when hovering the mouse over another window.
@@ -149,7 +151,7 @@ like so:
 
 The output should look something like this:
 
-    v4.7 by sbmpost(c) 2023, usage:
+    v4.8 by sbmpost(c) 2024, usage:
 
     AutoRaise
       -pollMillis <20, 30, 40, 50, ...>
@@ -158,6 +160,7 @@ The output should look something like this:
       -warpX <0.5> -warpY <0.5> -scale <2.0>
       -altTaskSwitcher <true|false>
       -ignoreSpaceChanged <true|false>
+      -invertIgnoreApps <true|false>
       -ignoreApps "<App1,App2, ...>"
       -stayFocusedBundleIds "<Id1,Id2, ...>"
       -disableKey <control|option|disabled>
@@ -171,6 +174,7 @@ The output should look something like this:
       * warpX: 0.5, warpY: 0.1, scale: 2.5
       * altTaskSwitcher: false
       * ignoreSpaceChanged: false
+      * invertIgnoreApps: false
       * ignoreApp: App1
       * ignoreApp: App2
       * stayFocusedBundleId: Id1
@@ -183,11 +187,11 @@ The output should look something like this:
       * OLD_ACTIVATION_METHOD
       * EXPERIMENTAL_FOCUS_FIRST
 
-    2023-03-01 18:22:48.315 AutoRaise[61965:2441068] AXIsProcessTrusted: YES
-    2023-03-01 18:22:48.335 AutoRaise[61965:2441068] System cursor scale: 1.000000
-    2023-03-01 18:22:48.352 AutoRaise[61965:2441068] Got run loop source: YES
-    2023-03-01 18:22:48.353 AutoRaise[61965:2441068] Registered app activated selector
-    2023-03-01 18:22:48.407 AutoRaise[61965:2441068] Desktop origin (0.000000, -221.000000)
+    2024-03-12 14:56:50.252 AutoRaise[50935:2122888] AXIsProcessTrusted: YES
+    2024-03-12 14:56:50.271 AutoRaise[50935:2122888] System cursor scale: 1.000000
+    2024-03-12 14:56:50.285 AutoRaise[50935:2122888] Got run loop source: YES
+    2024-03-12 14:56:50.333 AutoRaise[50935:2122888] Registered app activated selector
+    2024-03-12 14:56:50.334 AutoRaise[50935:2122888] Desktop origin (-1920.000000, -360.000000)
     ...
     ...
 

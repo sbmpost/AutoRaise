@@ -1,5 +1,5 @@
 /*
- * AutoRaise - Copyright (C) 2023 sbmpost
+ * AutoRaise - Copyright (C) 2024 sbmpost
  * Some pieces of the code are based on
  * metamove by jmgao as part of XFree86
  *
@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "4.7"
+#define AUTORAISE_VERSION "4.8"
 #define STACK_THRESHOLD 20
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST
@@ -110,6 +110,7 @@ static CGPoint desktopOrigin = {0, 0};
 static CGPoint oldPoint = {0, 0};
 static bool propagateMouseMoved = false;
 static bool ignoreSpaceChanged = false;
+static bool invertIgnoreApps = false;
 static bool spaceHasChanged = false;
 static bool appWasActivated = false;
 static bool altTaskSwitcher = false;
@@ -366,11 +367,12 @@ AXUIElementRef get_raisable_window(AXUIElementRef _element, CGPoint point, int c
     return _window;
 }
 
-AXUIElementRef get_mousewindow(CGPoint point) {
+AXUIElementRef get_mousewindow(CGPoint point, bool retry_after_failure = true) {
     AXUIElementRef _element = NULL;
     AXError error = AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
 
     AXUIElementRef _window = NULL;
+    static CGPoint lastMouseWindowPoint;
     if (_element) {
         _window = get_raisable_window(_element, point, 0);
     } else if (error == kAXErrorCannotComplete || error == kAXErrorNotImplemented) {
@@ -391,6 +393,7 @@ AXUIElementRef get_mousewindow(CGPoint point) {
     } else if (error == kAXErrorFailure) {
         // no fallback, happens when hovering over the menubar itself
         if (verbose) { NSLog(@"Copy element: failure"); }
+        return get_mousewindow(lastMouseWindowPoint, false);
     } else if (verbose) {
         NSLog(@"Copy element: AXError %d", error);
     }
@@ -404,6 +407,7 @@ AXUIElementRef get_mousewindow(CGPoint point) {
         } else { NSLog(@"No raisable window"); }
     }
 
+    lastMouseWindowPoint = point;
     return _window;
 }
 
@@ -688,6 +692,7 @@ const NSString *kVerbose = @"verbose";
 const NSString *kAltTaskSwitcher = @"altTaskSwitcher";
 const NSString *kIgnoreSpaceChanged = @"ignoreSpaceChanged";
 const NSString *kStayFocusedBundleIds = @"stayFocusedBundleIds";
+const NSString *kInvertIgnoreApps = @"invertIgnoreApps";
 const NSString *kIgnoreApps = @"ignoreApps";
 const NSString *kMouseDelta = @"mouseDelta";
 const NSString *kPollMillis = @"pollMillis";
@@ -695,10 +700,10 @@ const NSString *kDisableKey = @"disableKey";
 #ifdef FOCUS_FIRST
 const NSString *kFocusDelay = @"focusDelay";
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay,
-    kIgnoreSpaceChanged, kIgnoreApps, kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
+    kIgnoreSpaceChanged, kInvertIgnoreApps, kIgnoreApps, kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
 #else
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher,
-    kIgnoreSpaceChanged, kIgnoreApps, kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
+    kIgnoreSpaceChanged, kInvertIgnoreApps, kIgnoreApps, kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
 #endif
 NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
@@ -1017,24 +1022,31 @@ void onTick() {
         if (_mouseWindow) {
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
-                bool needs_raise = true;
+                bool needs_raise = !invertIgnoreApps;
                 AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
 #ifdef FOCUS_FIRST
                 bool temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = false;
 #endif
-                if (titleEquals(_mouseWindow, @[NoTitle])) {
+                if (needs_raise && titleEquals(_mouseWindow, @[NoTitle])) {
                     needs_raise = is_main_window(_mouseWindowApp, _mouseWindow, is_chrome_app(
                         [NSRunningApplication runningApplicationWithProcessIdentifier:
                         mouseWindow_pid].bundleIdentifier));
                     if (verbose && !needs_raise) { NSLog(@"Excluding window"); }
-                } else if (titleEquals(_mouseWindow, @[BartenderBar, Zim, AppStoreSearchResults])) {
+                } else if (needs_raise &&
+                    titleEquals(_mouseWindow, @[BartenderBar, Zim, AppStoreSearchResults])) {
                     // TODO: make these window title exceptions an ignoreWindowTitles setting.
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }
                 } else {
                     if (titleEquals(_mouseWindowApp, ignoreApps)) {
-                        needs_raise = false;
-                        if (verbose) { NSLog(@"Excluding app"); }
+                        needs_raise = invertIgnoreApps;
+                        if (verbose) {
+                            if (invertIgnoreApps) {
+                                NSLog(@"Including app");
+                            } else {
+                                NSLog(@"Excluding app");
+                            }
+                        }
                     }
 #ifdef FOCUS_FIRST
                     temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = is_jetbrains_app(
@@ -1054,44 +1066,42 @@ void onTick() {
                     _AXUIElementGetWindow(_mouseWindow, &mouseWindow_id);
                     pid_t frontmost_pid = frontmostApp.processIdentifier;
                     AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
-                    if (_frontmostApp) {
-                        AXUIElementRef _focusedWindow = NULL;
-                        AXUIElementCopyAttributeValue(
-                            _frontmostApp,
-                            kAXFocusedWindowAttribute,
-                            (CFTypeRef *) &_focusedWindow);
-                        if (_focusedWindow) {
-                            _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
-                            needs_raise = mouseWindow_id != focusedWindow_id;
+                    AXUIElementRef _focusedWindow = NULL;
+                    AXUIElementCopyAttributeValue(
+                        _frontmostApp,
+                        kAXFocusedWindowAttribute,
+                        (CFTypeRef *) &_focusedWindow);
+                    if (_focusedWindow) {
+                        _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
+                        needs_raise = mouseWindow_id != focusedWindow_id;
 #ifdef FOCUS_FIRST
-                            if (raiseDelayCount) {
+                        if (raiseDelayCount) {
 #endif
-                                needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+                            needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
 #ifdef FOCUS_FIRST
-                            } else {
-                                if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
-                                    needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-                                }
-                                needs_raise = needs_raise && is_main_window(_frontmostApp, _focusedWindow,
-                                    is_chrome_app(frontmostApp.bundleIdentifier));
-                                if (needs_raise) {
-                                    OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
-                                    if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
-                                }
-                            }
-#endif
-                            CFRelease(_focusedWindow);
                         } else {
-                            AXUIElementRef _activatedWindow = NULL;
-                            AXUIElementCopyAttributeValue(_frontmostApp,
-                                kAXMainWindowAttribute, (CFTypeRef *) &_activatedWindow);
-                            if (_activatedWindow) {
-                              needs_raise = false;
-                              CFRelease(_activatedWindow);
+                            if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
+                                needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+                            }
+                            needs_raise = needs_raise && is_main_window(_frontmostApp, _focusedWindow,
+                                is_chrome_app(frontmostApp.bundleIdentifier));
+                            if (needs_raise) {
+                                OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
+                                if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
                             }
                         }
-                        CFRelease(_frontmostApp);
+#endif
+                        CFRelease(_focusedWindow);
+                    } else {
+                        AXUIElementRef _activatedWindow = NULL;
+                        AXUIElementCopyAttributeValue(_frontmostApp,
+                            kAXMainWindowAttribute, (CFTypeRef *) &_activatedWindow);
+                        if (_activatedWindow) {
+                          needs_raise = false;
+                          CFRelease(_activatedWindow);
+                        }
                     }
+                    CFRelease(_frontmostApp);
                 }
 
                 if (needs_raise) {
@@ -1166,12 +1176,25 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
         }
     }
 
+    static bool commandGravePressed = false;
+    if (type == kCGEventFlagsChanged && commandGravePressed) {
+        if (!activated_by_task_switcher) {
+            activated_by_task_switcher = true;
+            ignoreTimes = 3;
+            [workspaceWatcher onAppActivated];
+        }
+    }
+
     commandTabPressed = false;
+    commandGravePressed = false;
     if (type == kCGEventKeyDown) {
         CGKeyCode keycode = (CGKeyCode) CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
         if (keycode == kVK_Tab) {
             CGEventFlags flags = CGEventGetFlags(event);
             commandTabPressed = (flags & kCGEventFlagMaskCommand) == kCGEventFlagMaskCommand;
+        } else if (warpMouse && keycode == kVK_ANSI_Grave) {
+            CGEventFlags flags = CGEventGetFlags(event);
+            commandGravePressed = (flags & kCGEventFlagMaskCommand) == kCGEventFlagMaskCommand;
         }
     } else if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
         if (verbose) { NSLog(@"Got event tap disabled event, re-enabling..."); }
@@ -1196,8 +1219,9 @@ int main(int argc, const char * argv[]) {
         mouseDelta         = [parameters[kMouseDelta] floatValue];
         pollMillis         = [parameters[kPollMillis] intValue];
         ignoreSpaceChanged = [parameters[kIgnoreSpaceChanged] boolValue];
+        invertIgnoreApps   = [parameters[kInvertIgnoreApps] boolValue];
 
-        printf("\nv%s by sbmpost(c) 2023, usage:\n\nAutoRaise\n", AUTORAISE_VERSION);
+        printf("\nv%s by sbmpost(c) 2024, usage:\n\nAutoRaise\n", AUTORAISE_VERSION);
         printf("  -pollMillis <20, 30, 40, 50, ...>\n");
         printf("  -delay <0=no-raise, 1=no-delay, 2=%dms, 3=%dms, ...>\n", pollMillis, pollMillis*2);
 #ifdef FOCUS_FIRST
@@ -1206,6 +1230,7 @@ int main(int argc, const char * argv[]) {
         printf("  -warpX <0.5> -warpY <0.5> -scale <2.0>\n");
         printf("  -altTaskSwitcher <true|false>\n");
         printf("  -ignoreSpaceChanged <true|false>\n");
+        printf("  -invertIgnoreApps <true|false>\n");
         printf("  -ignoreApps \"<App1,App2, ...>\"\n");
         printf("  -stayFocusedBundleIds \"<Id1,Id2, ...>\"\n");
         printf("  -disableKey <control|option|disabled>\n");
@@ -1236,6 +1261,7 @@ int main(int argc, const char * argv[]) {
         }
 
         printf("  * ignoreSpaceChanged: %s\n", ignoreSpaceChanged ? "true" : "false");
+        printf("  * invertIgnoreApps: %s\n", invertIgnoreApps ? "true" : "false");
 
         NSMutableArray * ignore;
         if (parameters[kIgnoreApps]) {

@@ -7,9 +7,9 @@
     <key>CFBundleIdentifier</key>
     <string>nl.postware.autoraise</string>
     <key>CFBundleGetInfoString</key>
-    <string>Copyright © 2023 sbmpost</string>
+    <string>Copyright © 2024 sbmpost</string>
     <key>CFBundleShortVersionString</key>
-    <string>4.7</string>
+    <string>4.8</string>
     <key>CFBundleIconFile</key>
     <string>AutoRaise</string>
     <key>CFBundleName</key>

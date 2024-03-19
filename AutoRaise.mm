@@ -248,11 +248,12 @@ NSDictionary * topwindow(CGPoint point) {
 
         if (![window[(__bridge id) kCGWindowLayer] isEqual: @0]) { continue; }
 
-        int x = [window_bounds_dict[@"X"] intValue];
-        int y = [window_bounds_dict[@"Y"] intValue];
-        int width = [window_bounds_dict[@"Width"] intValue];
-        int height = [window_bounds_dict[@"Height"] intValue];
-        NSRect window_bounds = NSMakeRect(x, y, width, height);
+        NSRect window_bounds = NSMakeRect(
+            [window_bounds_dict[@"X"] intValue],
+            [window_bounds_dict[@"Y"] intValue],
+            [window_bounds_dict[@"Width"] intValue] + 1,
+            [window_bounds_dict[@"Height"] intValue] + 1);
+
         if (NSPointInRect(NSPointFromCGPoint(point), window_bounds)) {
             top_window = window;
             break;
@@ -367,12 +368,11 @@ AXUIElementRef get_raisable_window(AXUIElementRef _element, CGPoint point, int c
     return _window;
 }
 
-AXUIElementRef get_mousewindow(CGPoint point, bool retry_after_failure = true) {
+AXUIElementRef get_mousewindow(CGPoint point) {
     AXUIElementRef _element = NULL;
     AXError error = AXUIElementCopyElementAtPosition(_accessibility_object, point.x, point.y, &_element);
 
     AXUIElementRef _window = NULL;
-    static CGPoint lastMouseWindowPoint;
     if (_element) {
         _window = get_raisable_window(_element, point, 0);
     } else if (error == kAXErrorCannotComplete || error == kAXErrorNotImplemented) {
@@ -393,7 +393,6 @@ AXUIElementRef get_mousewindow(CGPoint point, bool retry_after_failure = true) {
     } else if (error == kAXErrorFailure) {
         // no fallback, happens when hovering over the menubar itself
         if (verbose) { NSLog(@"Copy element: failure"); }
-        return get_mousewindow(lastMouseWindowPoint, false);
     } else if (verbose) {
         NSLog(@"Copy element: AXError %d", error);
     }
@@ -407,7 +406,6 @@ AXUIElementRef get_mousewindow(CGPoint point, bool retry_after_failure = true) {
         } else { NSLog(@"No raisable window"); }
     }
 
-    lastMouseWindowPoint = point;
     return _window;
 }
 
@@ -503,9 +501,15 @@ CGPoint findDesktopOrigin() {
 
 inline NSScreen * findScreen(CGPoint point) {
     NSScreen * main_screen = NSScreen.screens[0];
-    point.y = NSMaxY(main_screen.frame) - 1 - point.y;
+    point.y = NSMaxY(main_screen.frame) - point.y;
     for (NSScreen * screen in [NSScreen screens]) {
-        if (NSPointInRect(NSPointFromCGPoint(point), screen.frame)) {
+        NSRect screen_bounds = NSMakeRect(
+            screen.frame.origin.x,
+            screen.frame.origin.y,
+            NSWidth(screen.frame) + 1,
+            NSHeight(screen.frame) + 1
+        );
+        if (NSPointInRect(NSPointFromCGPoint(point), screen_bounds)) {
             return screen;
         }
     }
@@ -954,13 +958,28 @@ void onTick() {
             mousePoint.x += mouse_x_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
             mousePoint.y += mouse_y_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
             if (screen) {
-                float menuBarHeight =
-                    fmax(0, NSMaxY(screen.frame) - NSMaxY(screen.visibleFrame) - 1);
                 NSScreen * main_screen = NSScreen.screens[0];
+                float screenOriginX = NSMinX(screen.frame) - NSMinX(main_screen.frame);
                 float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
-                if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
-                    if (verbose) { NSLog(@"Menu bar correction"); }
-                    mousePoint.y = screenOriginY;
+
+                if (oldPoint.x > screenOriginX + NSWidth(screen.frame) - WINDOW_CORRECTION) {
+                    if (verbose) { NSLog(@"Screen edge correction"); }
+                    mousePoint.x = screenOriginX + NSWidth(screen.frame) - 1;
+                } else if (oldPoint.x < screenOriginX + WINDOW_CORRECTION - 1) {
+                    if (verbose) { NSLog(@"Screen edge correction"); }
+                    mousePoint.x = screenOriginX + 1;
+                }
+
+                if (oldPoint.y > screenOriginY + NSHeight(screen.frame) - WINDOW_CORRECTION) {
+                    if (verbose) { NSLog(@"Screen edge correction"); }
+                    mousePoint.y = screenOriginY + NSHeight(screen.frame) - 1;
+                } else {
+                    float menuBarHeight =
+                        fmax(0, NSMaxY(screen.frame) - NSMaxY(screen.visibleFrame) - 1);
+                    if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
+                        if (verbose) { NSLog(@"Menu bar correction"); }
+                        mousePoint.y = screenOriginY;
+                    }
                 }
             }
             oldCorrectedPoint = mousePoint;

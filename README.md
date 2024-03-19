@@ -1,7 +1,7 @@
 **AutoRaise**
 
 When you hover a window it will be raised to the front (with a delay of your choosing) and gets the focus. There is also an option to warp
-the mouse to the center of the activated window when using the cmd-tab key combination.
+the mouse to the center of the activated window when using the cmd-tab or cmd-grave (backtick) key combination.
 See also [on stackoverflow](https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x)
 
 **Quick start**

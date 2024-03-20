@@ -101,6 +101,7 @@ static const NSString * DockBundleId = @"com.apple.dock";
 static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
 static const NSString * BartenderBar = @"Bartender Bar";
+static const NSString * MicrosoftTeams = @"Meeting now | Microsoft Teams";
 static const NSString * AppStoreSearchResults = @"Search results";
 static const NSString * Zim = @"Zim";
 static const NSString * XQuartz = @"XQuartz";
@@ -1052,7 +1053,7 @@ void onTick() {
                         mouseWindow_pid].bundleIdentifier));
                     if (verbose && !needs_raise) { NSLog(@"Excluding window"); }
                 } else if (needs_raise &&
-                    titleEquals(_mouseWindow, @[BartenderBar, Zim, AppStoreSearchResults])) {
+                    titleEquals(_mouseWindow, @[BartenderBar, Zim, AppStoreSearchResults, MicrosoftTeams])) {
                     // TODO: make these window title exceptions an ignoreWindowTitles setting.
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }

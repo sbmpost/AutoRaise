@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "4.8"
+#define AUTORAISE_VERSION "4.9"
 #define STACK_THRESHOLD 20
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST
@@ -101,7 +101,7 @@ static const NSString * DockBundleId = @"com.apple.dock";
 static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
 static const NSString * BartenderBar = @"Bartender Bar";
-static const NSString * MicrosoftTeams = @"Meeting now | Microsoft Teams";
+static const NSString * MicrosoftTeams = @"Meeting.*\\s\\| Microsoft Teams";
 static const NSString * AppStoreSearchResults = @"Search results";
 static const NSString * Zim = @"Zim";
 static const NSString * XQuartz = @"XQuartz";
@@ -214,13 +214,20 @@ inline void raiseAndActivate(AXUIElementRef _window, pid_t window_pid) {
 }
 
 // TODO: does not take into account different languages
-inline bool titleEquals(AXUIElementRef _element, NSArray * _titles, bool logTitle = false) {
+inline bool titleEquals(AXUIElementRef _element, NSArray * _titles, NSArray * _patterns = NULL, bool logTitle = false) {
     bool equal = false;
     CFStringRef _elementTitle = NULL;
     AXUIElementCopyAttributeValue(_element, kAXTitleAttribute, (CFTypeRef *) &_elementTitle);
     if (logTitle) { NSLog(@"element title: %@", _elementTitle); }
     if (_elementTitle) {
-        equal = [_titles containsObject: (__bridge NSString *) _elementTitle];
+        NSString * _title = (__bridge NSString *) _elementTitle;
+        equal = [_titles containsObject: _title];
+        if (!equal && _patterns) {
+            for (NSString * _pattern in _patterns) {
+                equal = [_title rangeOfString:_pattern options:NSRegularExpressionSearch].location != NSNotFound;
+                if (equal) { break; }
+            }
+        }
         CFRelease(_elementTitle);
     } else { equal = [_titles containsObject: NoTitle]; }
     return equal;
@@ -1053,7 +1060,7 @@ void onTick() {
                         mouseWindow_pid].bundleIdentifier));
                     if (verbose && !needs_raise) { NSLog(@"Excluding window"); }
                 } else if (needs_raise &&
-                    titleEquals(_mouseWindow, @[BartenderBar, Zim, AppStoreSearchResults, MicrosoftTeams])) {
+                    titleEquals(_mouseWindow, @[BartenderBar, Zim, AppStoreSearchResults], @[MicrosoftTeams])) {
                     // TODO: make these window title exceptions an ignoreWindowTitles setting.
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }

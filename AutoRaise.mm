@@ -259,8 +259,8 @@ NSDictionary * topwindow(CGPoint point) {
         NSRect window_bounds = NSMakeRect(
             [window_bounds_dict[@"X"] intValue],
             [window_bounds_dict[@"Y"] intValue],
-            [window_bounds_dict[@"Width"] intValue] + 1,
-            [window_bounds_dict[@"Height"] intValue] + 1);
+            [window_bounds_dict[@"Width"] intValue],
+            [window_bounds_dict[@"Height"] intValue]);
 
         if (NSPointInRect(NSPointFromCGPoint(point), window_bounds)) {
             top_window = window;

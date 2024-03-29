@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "5.0"
+#define AUTORAISE_VERSION "5.1"
 #define STACK_THRESHOLD 20
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST
@@ -101,7 +101,7 @@ static const NSString * DockBundleId = @"com.apple.dock";
 static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
 static const NSString * BartenderBar = @"Bartender Bar";
-static const NSString * MicrosoftTeams = @"Meeting.*\\s\\| Microsoft Teams";
+static const NSString * MicrosoftTeams = @"\\s\\| Microsoft Teams";
 static const NSString * AppStoreSearchResults = @"Search results";
 static const NSString * Zim = @"Zim";
 static const NSString * XQuartz = @"XQuartz";

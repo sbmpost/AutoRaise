@@ -101,6 +101,7 @@ AutoRaise can read these parameters from a configuration file. To make this happ
     scale=2.5
     altTaskSwitcher=false
     ignoreSpaceChanged=false
+    invertIgnoreApps=false
     ignoreApps="App1,App2"
     stayFocusedBundleIds="Id1,Id2"
     disableKey="control"
@@ -151,7 +152,7 @@ like so:
 
 The output should look something like this:
 
-    v5.0 by sbmpost(c) 2024, usage:
+    v5.1 by sbmpost(c) 2024, usage:
 
     AutoRaise
       -pollMillis <20, 30, 40, 50, ...>

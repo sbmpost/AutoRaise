@@ -48,7 +48,7 @@
 // visual area to make the connected window raise. This new OSX 'feature' also introduces
 // unwanted raising of windows when visually connected to the top menu bar. To solve this
 // we correct the mouse position before determining which window is underneath the mouse.
-#define WINDOW_CORRECTION 3
+#define WINDOW_CORRECTION 6
 #define MENUBAR_CORRECTION 8
 static CGPoint oldCorrectedPoint = {0, 0};
 
@@ -390,7 +390,7 @@ AXUIElementRef get_mousewindow(CGPoint point) {
     } else if (error == kAXErrorIllegalArgument) {
         // fallback, happens in some System Preferences windows
         if (verbose) { NSLog(@"Copy element: illegal argument"); }
-        _window = fallback(point);
+        // _window = fallback(point);
     } else if (error == kAXErrorNoValue) {
         // fallback, happens sometimes when switching to another app (with cmd-tab)
         if (verbose) { NSLog(@"Copy element: no value"); }
@@ -1111,7 +1111,9 @@ void onTick() {
                                 needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
                             }
                             needs_raise = needs_raise && is_main_window(_frontmostApp, _focusedWindow,
-                                is_chrome_app(frontmostApp.bundleIdentifier));
+                                is_chrome_app(frontmostApp.bundleIdentifier)) && (
+                                mouseWindow_pid != frontmost_pid ||
+                                !contained_within(_focusedWindow, _mouseWindow));
                             if (needs_raise) {
                                 OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
                                 if (!error) { _focusedWindow_psn = &focusedWindow_psn; }

@@ -103,6 +103,7 @@ static const NSString * AssistiveControl = @"AssistiveControl";
 static const NSString * BartenderBar = @"Bartender Bar";
 static const NSString * MicrosoftTeams = @"\\s\\| Microsoft Teams";
 static const NSString * AppStoreSearchResults = @"Search results";
+static const NSString * Untitled = @"Untitled"; // OSX Email search
 static const NSString * Zim = @"Zim";
 static const NSString * XQuartz = @"XQuartz";
 static const NSString * Finder = @"Finder";
@@ -1054,7 +1055,7 @@ void onTick() {
 #ifdef FOCUS_FIRST
                 bool temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = false;
 #endif
-                if (needs_raise && titleEquals(_mouseWindow, @[NoTitle])) {
+                if (needs_raise && titleEquals(_mouseWindow, @[NoTitle, Untitled])) {
                     needs_raise = is_main_window(_mouseWindowApp, _mouseWindow, is_chrome_app(
                         [NSRunningApplication runningApplicationWithProcessIdentifier:
                         mouseWindow_pid].bundleIdentifier));
@@ -1099,6 +1100,13 @@ void onTick() {
                         kAXFocusedWindowAttribute,
                         (CFTypeRef *) &_focusedWindow);
                     if (_focusedWindow) {
+                        if (verbose) {
+                            CFStringRef _windowTitle = NULL;
+                            AXUIElementCopyAttributeValue(_focusedWindow,
+                                kAXTitleAttribute, (CFTypeRef *) &_windowTitle);
+                            NSLog(@"Focused window: %@", _windowTitle);
+                            if (_windowTitle) { CFRelease(_windowTitle); }
+                        }
                         _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
                         needs_raise = mouseWindow_id != focusedWindow_id;
 #ifdef FOCUS_FIRST
@@ -1122,6 +1130,7 @@ void onTick() {
 #endif
                         CFRelease(_focusedWindow);
                     } else {
+                        if (verbose) { NSLog(@"No focused window"); }
                         AXUIElementRef _activatedWindow = NULL;
                         AXUIElementCopyAttributeValue(_frontmostApp,
                             kAXMainWindowAttribute, (CFTypeRef *) &_activatedWindow);

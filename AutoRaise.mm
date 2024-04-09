@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "5.1"
+#define AUTORAISE_VERSION "5.2"
 #define STACK_THRESHOLD 20
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST
@@ -95,14 +95,15 @@ static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
+static NSArray * ignoreTitles = NULL;
 static NSArray * stayFocusedBundleIds = NULL;
 static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator", @"Podcasts", @"Stickies Pro", @"Reeder"];
 static const NSString * DockBundleId = @"com.apple.dock";
 static const NSString * FinderBundleId = @"com.apple.finder";
 static const NSString * AssistiveControl = @"AssistiveControl";
 static const NSString * BartenderBar = @"Bartender Bar";
-static const NSString * MicrosoftTeams = @"\\s\\| Microsoft Teams";
 static const NSString * AppStoreSearchResults = @"Search results";
+static const NSString * Untitled = @"Untitled"; // OSX Email search
 static const NSString * Zim = @"Zim";
 static const NSString * XQuartz = @"XQuartz";
 static const NSString * Finder = @"Finder";
@@ -387,10 +388,6 @@ AXUIElementRef get_mousewindow(CGPoint point) {
         // fallback, happens for apps that do not support the Accessibility API
         if (verbose) { NSLog(@"Copy element: no accessibility support"); }
         _window = fallback(point);
-    } else if (error == kAXErrorIllegalArgument) {
-        // fallback, happens in some System Preferences windows
-        if (verbose) { NSLog(@"Copy element: illegal argument"); }
-        _window = fallback(point);
     } else if (error == kAXErrorNoValue) {
         // fallback, happens sometimes when switching to another app (with cmd-tab)
         if (verbose) { NSLog(@"Copy element: no value"); }
@@ -401,6 +398,9 @@ AXUIElementRef get_mousewindow(CGPoint point) {
     } else if (error == kAXErrorFailure) {
         // no fallback, happens when hovering over the menubar itself
         if (verbose) { NSLog(@"Copy element: failure"); }
+    } else if (error == kAXErrorIllegalArgument) {
+        // no fallback, happens in (Open, Save) dialogs
+        if (verbose) { NSLog(@"Copy element: illegal argument"); }
     } else if (verbose) {
         NSLog(@"Copy element: AXError %d", error);
     }
@@ -598,13 +598,6 @@ inline bool is_chrome_app(NSString * bundleIdentifier) {
     return components.count > 4 && [components[2] isEqual: @"Chrome"] && [components[3] isEqual: @"app"];
 }
 
-#ifdef FOCUS_FIRST
-inline bool is_jetbrains_app(NSString * bundleIdentifier) {
-    NSArray * components = [bundleIdentifier componentsSeparatedByString: @"."];
-    return components.count > 2 && [components[0] isEqual: @"com"] && [components[1] isEqual: @"jetbrains"];
-}
-#endif
-
 //-----------------------------------------------notifications----------------------------------------------
 
 void spaceChanged();
@@ -706,16 +699,19 @@ const NSString *kIgnoreSpaceChanged = @"ignoreSpaceChanged";
 const NSString *kStayFocusedBundleIds = @"stayFocusedBundleIds";
 const NSString *kInvertIgnoreApps = @"invertIgnoreApps";
 const NSString *kIgnoreApps = @"ignoreApps";
+const NSString *kIgnoreTitles = @"ignoreTitles";
 const NSString *kMouseDelta = @"mouseDelta";
 const NSString *kPollMillis = @"pollMillis";
 const NSString *kDisableKey = @"disableKey";
 #ifdef FOCUS_FIRST
 const NSString *kFocusDelay = @"focusDelay";
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher, kFocusDelay,
-    kIgnoreSpaceChanged, kInvertIgnoreApps, kIgnoreApps, kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher,
+    kFocusDelay, kIgnoreSpaceChanged, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles,
+    kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
 #else
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher,
-    kIgnoreSpaceChanged, kInvertIgnoreApps, kIgnoreApps, kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
+    kIgnoreSpaceChanged, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles, kStayFocusedBundleIds,
+    kDisableKey, kMouseDelta, kPollMillis];
 #endif
 NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
@@ -957,44 +953,50 @@ void onTick() {
     // delayTicks = n -> delay started
     if (delayTicks > 1) { delayTicks--; }
 
-    if (@available(macOS 12.00, *)) {
-        // the correction should be applied before we return
-        // under certain conditions in the code after it. This
-        // ensures oldCorrectedPoint always has a recent value.
-        if (mouseMoved) {
-            NSScreen * screen = findScreen(mousePoint);
-            mousePoint.x += mouse_x_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
-            mousePoint.y += mouse_y_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
-            if (screen) {
-                NSScreen * main_screen = NSScreen.screens[0];
-                float screenOriginX = NSMinX(screen.frame) - NSMinX(main_screen.frame);
-                float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
+#ifdef FOCUS_FIRST
+    if (!delayCount || raiseDelayCount == 1) {
+#endif
+        if (@available(macOS 12.00, *)) {
+            // the correction should be applied before we return
+            // under certain conditions in the code after it. This
+            // ensures oldCorrectedPoint always has a recent value.
+            if (mouseMoved) {
+                NSScreen * screen = findScreen(mousePoint);
+                mousePoint.x += mouse_x_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
+                mousePoint.y += mouse_y_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
+                if (screen) {
+                    NSScreen * main_screen = NSScreen.screens[0];
+                    float screenOriginX = NSMinX(screen.frame) - NSMinX(main_screen.frame);
+                    float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
 
-                if (oldPoint.x > screenOriginX + NSWidth(screen.frame) - WINDOW_CORRECTION) {
-                    if (verbose) { NSLog(@"Screen edge correction"); }
-                    mousePoint.x = screenOriginX + NSWidth(screen.frame) - 1;
-                } else if (oldPoint.x < screenOriginX + WINDOW_CORRECTION - 1) {
-                    if (verbose) { NSLog(@"Screen edge correction"); }
-                    mousePoint.x = screenOriginX + 1;
-                }
+                    if (oldPoint.x > screenOriginX + NSWidth(screen.frame) - WINDOW_CORRECTION) {
+                        if (verbose) { NSLog(@"Screen edge correction"); }
+                        mousePoint.x = screenOriginX + NSWidth(screen.frame) - 1;
+                    } else if (oldPoint.x < screenOriginX + WINDOW_CORRECTION - 1) {
+                        if (verbose) { NSLog(@"Screen edge correction"); }
+                        mousePoint.x = screenOriginX + 1;
+                    }
 
-                if (oldPoint.y > screenOriginY + NSHeight(screen.frame) - WINDOW_CORRECTION) {
-                    if (verbose) { NSLog(@"Screen edge correction"); }
-                    mousePoint.y = screenOriginY + NSHeight(screen.frame) - 1;
-                } else {
-                    float menuBarHeight =
-                        fmax(0, NSMaxY(screen.frame) - NSMaxY(screen.visibleFrame) - 1);
-                    if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
-                        if (verbose) { NSLog(@"Menu bar correction"); }
-                        mousePoint.y = screenOriginY;
+                    if (oldPoint.y > screenOriginY + NSHeight(screen.frame) - WINDOW_CORRECTION) {
+                        if (verbose) { NSLog(@"Screen edge correction"); }
+                        mousePoint.y = screenOriginY + NSHeight(screen.frame) - 1;
+                    } else {
+                        float menuBarHeight =
+                            fmax(0, NSMaxY(screen.frame) - NSMaxY(screen.visibleFrame) - 1);
+                        if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
+                            if (verbose) { NSLog(@"Menu bar correction"); }
+                            mousePoint.y = screenOriginY;
+                        }
                     }
                 }
+                oldCorrectedPoint = mousePoint;
+            } else {
+                mousePoint = oldCorrectedPoint;
             }
-            oldCorrectedPoint = mousePoint;
-        } else {
-            mousePoint = oldCorrectedPoint;
         }
+#ifdef FOCUS_FIRST
     }
+#endif
 
     if (ignoreTimes) {
         ignoreTimes--;
@@ -1051,16 +1053,13 @@ void onTick() {
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
                 bool needs_raise = !invertIgnoreApps;
                 AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
-#ifdef FOCUS_FIRST
-                bool temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = false;
-#endif
-                if (needs_raise && titleEquals(_mouseWindow, @[NoTitle])) {
+                if (needs_raise && titleEquals(_mouseWindow, @[NoTitle, Untitled])) {
                     needs_raise = is_main_window(_mouseWindowApp, _mouseWindow, is_chrome_app(
                         [NSRunningApplication runningApplicationWithProcessIdentifier:
                         mouseWindow_pid].bundleIdentifier));
                     if (verbose && !needs_raise) { NSLog(@"Excluding window"); }
                 } else if (needs_raise &&
-                    titleEquals(_mouseWindow, @[BartenderBar, Zim, AppStoreSearchResults], @[MicrosoftTeams])) {
+                    titleEquals(_mouseWindow, @[BartenderBar, Zim, AppStoreSearchResults], ignoreTitles)) {
                     // TODO: make these window title exceptions an ignoreWindowTitles setting.
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding window"); }
@@ -1075,11 +1074,6 @@ void onTick() {
                             }
                         }
                     }
-#ifdef FOCUS_FIRST
-                    temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus = is_jetbrains_app(
-                        [NSRunningApplication runningApplicationWithProcessIdentifier:
-                        mouseWindow_pid].bundleIdentifier);
-#endif
                 }
                 CFRelease(_mouseWindowApp);
                 CGWindowID mouseWindow_id;
@@ -1099,6 +1093,13 @@ void onTick() {
                         kAXFocusedWindowAttribute,
                         (CFTypeRef *) &_focusedWindow);
                     if (_focusedWindow) {
+                        if (verbose) {
+                            CFStringRef _windowTitle = NULL;
+                            AXUIElementCopyAttributeValue(_focusedWindow,
+                                kAXTitleAttribute, (CFTypeRef *) &_windowTitle);
+                            NSLog(@"Focused window: %@", _windowTitle);
+                            if (_windowTitle) { CFRelease(_windowTitle); }
+                        }
                         _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
                         needs_raise = mouseWindow_id != focusedWindow_id;
 #ifdef FOCUS_FIRST
@@ -1107,19 +1108,19 @@ void onTick() {
                             needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
 #ifdef FOCUS_FIRST
                         } else {
-                            if (temporary_workaround_for_jetbrains_apps_raising_subwindows_on_focus) {
-                                needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
-                            }
                             needs_raise = needs_raise && is_main_window(_frontmostApp, _focusedWindow,
-                                is_chrome_app(frontmostApp.bundleIdentifier));
-                            if (needs_raise) {
-                                OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
-                                if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
-                            }
+                                is_chrome_app(frontmostApp.bundleIdentifier)) && (
+                                mouseWindow_pid != frontmost_pid ||
+                                !contained_within(_focusedWindow, _mouseWindow));
+                        }
+                        if (needs_raise && delayCount && raiseDelayCount != 1) {
+                            OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
+                            if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
                         }
 #endif
                         CFRelease(_focusedWindow);
                     } else {
+                        if (verbose) { NSLog(@"No focused window"); }
                         AXUIElementRef _activatedWindow = NULL;
                         AXUIElementCopyAttributeValue(_frontmostApp,
                             kAXMainWindowAttribute, (CFTypeRef *) &_activatedWindow);
@@ -1259,6 +1260,7 @@ int main(int argc, const char * argv[]) {
         printf("  -ignoreSpaceChanged <true|false>\n");
         printf("  -invertIgnoreApps <true|false>\n");
         printf("  -ignoreApps \"<App1,App2, ...>\"\n");
+        printf("  -ignoreTitles \"<Regex1, Regex2, ...>\"\n");
         printf("  -stayFocusedBundleIds \"<Id1,Id2, ...>\"\n");
         printf("  -disableKey <control|option|disabled>\n");
         printf("  -mouseDelta <0.1>\n");
@@ -1290,17 +1292,28 @@ int main(int argc, const char * argv[]) {
         printf("  * ignoreSpaceChanged: %s\n", ignoreSpaceChanged ? "true" : "false");
         printf("  * invertIgnoreApps: %s\n", invertIgnoreApps ? "true" : "false");
 
-        NSMutableArray * ignore;
+        NSMutableArray * ignoreA;
         if (parameters[kIgnoreApps]) {
-            ignore = [[NSMutableArray alloc] initWithArray:
+            ignoreA = [[NSMutableArray alloc] initWithArray:
                 [parameters[kIgnoreApps] componentsSeparatedByString:@","]];
-        } else { ignore = [[NSMutableArray alloc] init]; }
+        } else { ignoreA = [[NSMutableArray alloc] init]; }
 
-        for (id ignoreApp in ignore) {
+        for (id ignoreApp in ignoreA) {
             printf("  * ignoreApp: %s\n", [ignoreApp UTF8String]);
         }
-        [ignore addObject: AssistiveControl];
-        ignoreApps = [ignore copy];
+        [ignoreA addObject: AssistiveControl];
+        ignoreApps = [ignoreA copy];
+
+        NSMutableArray * ignoreT;
+        if (parameters[kIgnoreTitles]) {
+            ignoreT = [[NSMutableArray alloc] initWithArray:
+                [parameters[kIgnoreTitles] componentsSeparatedByString:@","]];
+        } else { ignoreT = [[NSMutableArray alloc] init]; }
+
+        for (id ignoreTitle in ignoreT) {
+            printf("  * ignoreTitle: %s\n", [ignoreTitle UTF8String]);
+        }
+        ignoreTitles = [ignoreT copy];
 
         NSMutableArray * stayFocused;
         if (parameters[kStayFocusedBundleIds]) {

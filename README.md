@@ -81,6 +81,8 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
   - ignoreApps: Comma separated list of apps for which you would like to disable focus/raise.
 
+  - ignoreTitles: Comma separated list of window titles (a title can be an ICU regular expression) for which you would like to disable focus/raise.
+
   - stayFocusedBundleIds: Comma separated list of app bundle identifiers that shouldn't lose focus even when hovering the mouse over another window.
 
   - disableKey: Set to control, option or disabled. This will temporarily disable AutoRaise while holding the specified key. The default is control.
@@ -102,8 +104,9 @@ AutoRaise can read these parameters from a configuration file. To make this happ
     altTaskSwitcher=false
     ignoreSpaceChanged=false
     invertIgnoreApps=false
-    ignoreApps="App1,App2"
-    stayFocusedBundleIds="Id1,Id2"
+    ignoreApps="IntelliJ IDEA,WebStorm"
+    ignoreTitles="\\s\\| Microsoft Teams,..."
+    stayFocusedBundleIds="com.apple.SecurityAgent,..."
     disableKey="control"
     mouseDelta=0.1
 
@@ -152,7 +155,7 @@ like so:
 
 The output should look something like this:
 
-    v5.1 by sbmpost(c) 2024, usage:
+    v5.2 by sbmpost(c) 2024, usage:
 
     AutoRaise
       -pollMillis <20, 30, 40, 50, ...>
@@ -163,6 +166,7 @@ The output should look something like this:
       -ignoreSpaceChanged <true|false>
       -invertIgnoreApps <true|false>
       -ignoreApps "<App1,App2, ...>"
+      -ignoreTitles "<Regex1, Regex2, ...>"
       -stayFocusedBundleIds "<Id1,Id2, ...>"
       -disableKey <control|option|disabled>
       -mouseDelta <0.1>
@@ -178,6 +182,8 @@ The output should look something like this:
       * invertIgnoreApps: false
       * ignoreApp: App1
       * ignoreApp: App2
+      * ignoreTitle: Regex1
+      * ignoreTitle: Regex2
       * stayFocusedBundleId: Id1
       * stayFocusedBundleId: Id2
       * disableKey: control
@@ -188,11 +194,11 @@ The output should look something like this:
       * OLD_ACTIVATION_METHOD
       * EXPERIMENTAL_FOCUS_FIRST
 
-    2024-03-12 14:56:50.252 AutoRaise[50935:2122888] AXIsProcessTrusted: YES
-    2024-03-12 14:56:50.271 AutoRaise[50935:2122888] System cursor scale: 1.000000
-    2024-03-12 14:56:50.285 AutoRaise[50935:2122888] Got run loop source: YES
-    2024-03-12 14:56:50.333 AutoRaise[50935:2122888] Registered app activated selector
-    2024-03-12 14:56:50.334 AutoRaise[50935:2122888] Desktop origin (-1920.000000, -360.000000)
+    2024-04-09 10:55:27.903 AutoRaise[40260:3886758] AXIsProcessTrusted: YES
+    2024-04-09 10:55:27.922 AutoRaise[40260:3886758] System cursor scale: 1.000000
+    2024-04-09 10:55:27.936 AutoRaise[40260:3886758] Got run loop source: YES
+    2024-04-09 10:55:27.975 AutoRaise[40260:3886758] Registered app activated selector
+    2024-04-09 10:55:27.995 AutoRaise[40260:3886758] Desktop origin (-1920.000000, -360.000000)
     ...
     ...
 

@@ -28,7 +28,7 @@
 #include <Carbon/Carbon.h>
 #include <libproc.h>
 
-#define AUTORAISE_VERSION "5.2"
+#define AUTORAISE_VERSION "5.3"
 #define STACK_THRESHOLD 20
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST
@@ -97,17 +97,18 @@ static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
 static NSArray * ignoreTitles = NULL;
 static NSArray * stayFocusedBundleIds = NULL;
-static NSArray * mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator", @"Podcasts", @"Stickies Pro", @"Reeder"];
-static const NSString * DockBundleId = @"com.apple.dock";
-static const NSString * FinderBundleId = @"com.apple.finder";
-static const NSString * AssistiveControl = @"AssistiveControl";
-static const NSString * BartenderBar = @"Bartender Bar";
-static const NSString * AppStoreSearchResults = @"Search results";
-static const NSString * Untitled = @"Untitled"; // OSX Email search
-static const NSString * Zim = @"Zim";
-static const NSString * XQuartz = @"XQuartz";
-static const NSString * Finder = @"Finder";
-static const NSString * NoTitle = @"";
+static NSArray * const mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator", @"Podcasts", @"Stickies Pro", @"Reeder"];
+static NSString * const DockBundleId = @"com.apple.dock";
+static NSString * const FinderBundleId = @"com.apple.finder";
+static NSString * const LittleSnitchBundleId = @"at.obdev.littlesnitch";
+static NSString * const AssistiveControl = @"AssistiveControl";
+static NSString * const BartenderBar = @"Bartender Bar";
+static NSString * const AppStoreSearchResults = @"Search results";
+static NSString * const Untitled = @"Untitled"; // OSX Email search
+static NSString * const Zim = @"Zim";
+static NSString * const XQuartz = @"XQuartz";
+static NSString * const Finder = @"Finder";
+static NSString * const NoTitle = @"";
 static CGPoint desktopOrigin = {0, 0};
 static CGPoint oldPoint = {0, 0};
 static bool propagateMouseMoved = false;
@@ -479,32 +480,28 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
     return contained;
 }
 
-AXUIElementRef findDockApplication() {
-    AXUIElementRef _dock = NULL;
+void findDockApplication() {
     NSArray * _apps = [[NSWorkspace sharedWorkspace] runningApplications];
     for (NSRunningApplication * app in _apps) {
         if ([app.bundleIdentifier isEqual: DockBundleId]) {
-            _dock = AXUIElementCreateApplication(app.processIdentifier);
+            _dock_app = AXUIElementCreateApplication(app.processIdentifier);
             break;
         }
     }
 
-    if (verbose && !_dock) { NSLog(@"Dock application isn't running"); }
-    return _dock;
+    if (verbose && !_dock_app) { NSLog(@"Dock application isn't running"); }
 }
 
-CGPoint findDesktopOrigin() {
-    CGPoint origin = {0, 0};
+void findDesktopOrigin() {
     NSScreen * main_screen = NSScreen.screens[0];
     float mainScreenTop = NSMaxY(main_screen.frame);
     for (NSScreen * screen in [NSScreen screens]) {
         float screenOriginY = mainScreenTop - NSMaxY(screen.frame);
-        if (screenOriginY < origin.y) { origin.y = screenOriginY; }
-        if (screen.frame.origin.x < origin.x) { origin.x = screen.frame.origin.x; }
+        if (screenOriginY < desktopOrigin.y) { desktopOrigin.y = screenOriginY; }
+        if (screen.frame.origin.x < desktopOrigin.x) { desktopOrigin.x = screen.frame.origin.x; }
     }
 
-    if (verbose) { NSLog(@"Desktop origin (%f, %f)", origin.x, origin.y); }
-    return origin;
+    if (verbose) { NSLog(@"Desktop origin (%f, %f)", desktopOrigin.x, desktopOrigin.y); }
 }
 
 inline NSScreen * findScreen(CGPoint point) {
@@ -579,6 +576,15 @@ inline bool is_main_window(AXUIElementRef _app, AXUIElementRef _window, bool chr
     AXUIElementCopyAttributeValue(_window, kAXMainAttribute, (CFTypeRef *) &_result);
     if (_result) {
         main_window = CFEqual(_result, kCFBooleanTrue);
+        if (main_window) {
+            CFStringRef _element_sub_role = NULL;
+            AXUIElementCopyAttributeValue(_window, kAXSubroleAttribute, (CFTypeRef *) &_element_sub_role);
+            if (_element_sub_role) {
+                main_window = !CFEqual(_element_sub_role, kAXDialogSubrole);
+                if (verbose && !main_window) { NSLog(@"Dialog window"); }
+                CFRelease(_element_sub_role);
+            }
+        }
         CFRelease(_result);
     }
 
@@ -888,18 +894,15 @@ bool appActivated() {
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
         if (_mouseWindow) {
             if (!activated_by_task_switcher) {
+                pid_t mouseWindow_pid;
                 // Checking for mouse movement reduces the problem of the mouse being warped
                 // when changing spaces and simultaneously moving the mouse to another screen
                 ignoreActivated = fabs(mousePoint.x-oldPoint.x) > 0;
                 ignoreActivated = ignoreActivated || fabs(mousePoint.y-oldPoint.y) > 0;
-            }
-            if (!ignoreActivated) {
                 // Check if the mouse is already hovering above the frontmost app. If
                 // for example we only change spaces, we don't want the mouse to warp
-                pid_t mouseWindow_pid;
-                ignoreActivated = AXUIElementGetPid(_mouseWindow,
-                    &mouseWindow_pid) == kAXErrorSuccess &&
-                    mouseWindow_pid == frontmost_pid;
+                ignoreActivated = ignoreActivated || (AXUIElementGetPid(_mouseWindow,
+                    &mouseWindow_pid) == kAXErrorSuccess && mouseWindow_pid == frontmost_pid);
             }
             CFRelease(_mouseWindow);
         } else { // dock or top menu
@@ -1259,9 +1262,9 @@ int main(int argc, const char * argv[]) {
         printf("  -altTaskSwitcher <true|false>\n");
         printf("  -ignoreSpaceChanged <true|false>\n");
         printf("  -invertIgnoreApps <true|false>\n");
-        printf("  -ignoreApps \"<App1,App2, ...>\"\n");
-        printf("  -ignoreTitles \"<Regex1, Regex2, ...>\"\n");
-        printf("  -stayFocusedBundleIds \"<Id1,Id2, ...>\"\n");
+        printf("  -ignoreApps \"<App1,App2,...>\"\n");
+        printf("  -ignoreTitles \"<Regex1,Regex2,...>\"\n");
+        printf("  -stayFocusedBundleIds \"<Id1,Id2,...>\"\n");
         printf("  -disableKey <control|option|disabled>\n");
         printf("  -mouseDelta <0.1>\n");
         printf("  -verbose <true|false>\n\n");
@@ -1380,8 +1383,8 @@ int main(int argc, const char * argv[]) {
             [workspaceWatcher onTick: [NSNumber numberWithFloat: pollMillis/1000.0]];
         }
 
-        _dock_app = findDockApplication();
-        desktopOrigin = findDesktopOrigin();
+        findDockApplication();
+        findDesktopOrigin();
         [[NSApplication sharedApplication] run];
     }
     return 0;

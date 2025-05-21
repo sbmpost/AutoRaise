@@ -102,6 +102,7 @@ static NSString * const DockBundleId = @"com.apple.dock";
 static NSString * const FinderBundleId = @"com.apple.finder";
 static NSString * const LittleSnitchBundleId = @"at.obdev.littlesnitch";
 static NSString * const AssistiveControl = @"AssistiveControl";
+static NSString * const MissionControl = @"Mission Control";
 static NSString * const BartenderBar = @"Bartender Bar";
 static NSString * const AppStoreSearchResults = @"Search results";
 static NSString * const Untitled = @"Untitled"; // OSX Email search
@@ -244,6 +245,28 @@ inline bool dock_active() {
         if (verbose) { NSLog(@"Dock is active"); }
         CFRelease(_focusedUIElement);
     }
+    return active;
+}
+
+inline bool mc_active() {
+    bool active = false;
+    CFArrayRef _children = NULL;
+    AXUIElementCopyAttributeValue(_dock_app, kAXChildrenAttribute, (CFTypeRef *) &_children);
+    if (_children) {
+        CFIndex count = CFArrayGetCount(_children);
+        for (CFIndex i=0;!active && i != count;i++) {
+            CFStringRef _element_role = NULL;
+            AXUIElementRef _element = (AXUIElementRef) CFArrayGetValueAtIndex(_children, i);
+            AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
+            if (_element_role) {
+                active = CFEqual(_element_role, kAXGroupRole) && titleEquals(_element, @[MissionControl]);
+                CFRelease(_element_role);
+            }
+        }
+        CFRelease(_children);
+    }
+
+    if (verbose && active) { NSLog(@"Mission Control is active"); }
     return active;
 }
 
@@ -1031,7 +1054,8 @@ void onTick() {
         // don't raise for as long as something is being dragged (resizing a window for instance)
         bool abort = CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft) ||
             CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight) ||
-            dock_active();
+            dock_active() ||
+            mc_active();
 
         if (!abort && disableKey) {
             CGEventRef _keyDownEvent = CGEventCreateKeyboardEvent(NULL, 0, true);

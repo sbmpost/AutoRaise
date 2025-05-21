@@ -428,8 +428,8 @@ CGPoint get_mousepoint(AXUIElementRef _window) {
         if (_pos) {
             CGSize cg_size;
             CGPoint cg_pos;
-            if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size) &&
-                AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
+            if (AXValueGetValue(_size, kAXValueTypeCGSize, &cg_size) &&
+                AXValueGetValue(_pos, kAXValueTypeCGPoint, &cg_pos)) {
                 mousepoint.x = cg_pos.x + (cg_size.width * warpX);
                 mousepoint.y = cg_pos.y + (cg_size.height * warpY);
             }
@@ -460,10 +460,10 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
                     CGSize cg_size2;
                     CGPoint cg_pos1;
                     CGPoint cg_pos2;
-                    if (AXValueGetValue(_size1, kAXValueCGSizeType, &cg_size1) &&
-                        AXValueGetValue(_pos1, kAXValueCGPointType, &cg_pos1) &&
-                        AXValueGetValue(_size2, kAXValueCGSizeType, &cg_size2) &&
-                        AXValueGetValue(_pos2, kAXValueCGPointType, &cg_pos2)) {
+                    if (AXValueGetValue(_size1, kAXValueTypeCGSize, &cg_size1) &&
+                        AXValueGetValue(_pos1, kAXValueTypeCGPoint, &cg_pos1) &&
+                        AXValueGetValue(_size2, kAXValueTypeCGSize, &cg_size2) &&
+                        AXValueGetValue(_pos2, kAXValueTypeCGPoint, &cg_pos2)) {
                         contained = cg_pos1.x > cg_pos2.x && cg_pos1.y > cg_pos2.y &&
                             cg_pos1.x + cg_size1.width < cg_pos2.x + cg_size2.width &&
                             cg_pos1.y + cg_size1.height < cg_pos2.y + cg_size2.height;
@@ -527,7 +527,7 @@ inline bool is_desktop_window(AXUIElementRef _window) {
     AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
     if (_pos) {
         CGPoint cg_pos;
-        desktop_window = AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos) &&
+        desktop_window = AXValueGetValue(_pos, kAXValueTypeCGPoint, &cg_pos) &&
             NSEqualPoints(NSPointFromCGPoint(cg_pos), NSPointFromCGPoint(desktopOrigin));
         CFRelease(_pos);
     }
@@ -542,14 +542,14 @@ inline bool is_full_screen(AXUIElementRef _window) {
     AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
     if (_pos) {
         CGPoint cg_pos;
-        if (AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
+        if (AXValueGetValue(_pos, kAXValueTypeCGPoint, &cg_pos)) {
             NSScreen * screen = findScreen(cg_pos);
             if (screen) {
                 AXValueRef _size = NULL;
                 AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
                 if (_size) {
                     CGSize cg_size;
-                    if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size)) {
+                    if (AXValueGetValue(_size, kAXValueTypeCGSize, &cg_size)) {
                         float menuBarHeight =
                             fmax(0, NSMaxY(screen.frame) - NSMaxY(screen.visibleFrame) - 1);
                         NSScreen * main_screen = NSScreen.screens[0];

@@ -97,7 +97,15 @@ static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
 static NSArray * ignoreTitles = NULL;
 static NSArray * stayFocusedBundleIds = NULL;
-static NSArray * const mainWindowAppsWithoutTitle = @[@"Photos", @"Calculator", @"Podcasts", @"Stickies Pro", @"Reeder"];
+static NSArray * const mainWindowAppsWithoutTitle =@[
+    @"System Settings",
+    @"System Information",
+    @"Photos",
+    @"Calculator",
+    @"Podcasts",
+    @"Stickies Pro",
+    @"Reeder"
+];
 static NSString * const DockBundleId = @"com.apple.dock";
 static NSString * const FinderBundleId = @"com.apple.finder";
 static NSString * const LittleSnitchBundleId = @"at.obdev.littlesnitch";

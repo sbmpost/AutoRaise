@@ -102,6 +102,7 @@ static NSString * const DockBundleId = @"com.apple.dock";
 static NSString * const FinderBundleId = @"com.apple.finder";
 static NSString * const LittleSnitchBundleId = @"at.obdev.littlesnitch";
 static NSString * const AssistiveControl = @"AssistiveControl";
+static NSString * const MissionControl = @"Mission Control";
 static NSString * const BartenderBar = @"Bartender Bar";
 static NSString * const AppStoreSearchResults = @"Search results";
 static NSString * const Untitled = @"Untitled"; // OSX Email search
@@ -244,6 +245,28 @@ inline bool dock_active() {
         if (verbose) { NSLog(@"Dock is active"); }
         CFRelease(_focusedUIElement);
     }
+    return active;
+}
+
+inline bool mc_active() {
+    bool active = false;
+    CFArrayRef _children = NULL;
+    AXUIElementCopyAttributeValue(_dock_app, kAXChildrenAttribute, (CFTypeRef *) &_children);
+    if (_children) {
+        CFIndex count = CFArrayGetCount(_children);
+        for (CFIndex i=0;!active && i != count;i++) {
+            CFStringRef _element_role = NULL;
+            AXUIElementRef _element = (AXUIElementRef) CFArrayGetValueAtIndex(_children, i);
+            AXUIElementCopyAttributeValue(_element, kAXRoleAttribute, (CFTypeRef *) &_element_role);
+            if (_element_role) {
+                active = CFEqual(_element_role, kAXGroupRole) && titleEquals(_element, @[MissionControl]);
+                CFRelease(_element_role);
+            }
+        }
+        CFRelease(_children);
+    }
+
+    if (verbose && active) { NSLog(@"Mission Control is active"); }
     return active;
 }
 
@@ -429,8 +452,8 @@ CGPoint get_mousepoint(AXUIElementRef _window) {
         if (_pos) {
             CGSize cg_size;
             CGPoint cg_pos;
-            if (AXValueGetValue(_size, (AXValueType)kAXValueCGSizeType, &cg_size) &&
-                AXValueGetValue(_pos, (AXValueType)kAXValueCGPointType, &cg_pos)) {
+            if (AXValueGetValue(_size, kAXValueTypeCGSize, &cg_size) &&
+                AXValueGetValue(_pos, kAXValueTypeCGPoint, &cg_pos)) {
                 mousepoint.x = cg_pos.x + (cg_size.width * warpX);
                 mousepoint.y = cg_pos.y + (cg_size.height * warpY);
             }
@@ -461,10 +484,10 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
                     CGSize cg_size2;
                     CGPoint cg_pos1;
                     CGPoint cg_pos2;
-                    if (AXValueGetValue(_size1, (AXValueType)kAXValueCGSizeType, &cg_size1) &&
-                        AXValueGetValue(_pos1, (AXValueType)kAXValueCGPointType, &cg_pos1) &&
-                        AXValueGetValue(_size2, (AXValueType)kAXValueCGSizeType, &cg_size2) &&
-                        AXValueGetValue(_pos2, (AXValueType)kAXValueCGPointType, &cg_pos2)) {
+                    if (AXValueGetValue(_size1, kAXValueTypeCGSize, &cg_size1) &&
+                        AXValueGetValue(_pos1, kAXValueTypeCGPoint, &cg_pos1) &&
+                        AXValueGetValue(_size2, kAXValueTypeCGSize, &cg_size2) &&
+                        AXValueGetValue(_pos2, kAXValueTypeCGPoint, &cg_pos2)) {
                         contained = cg_pos1.x > cg_pos2.x && cg_pos1.y > cg_pos2.y &&
                             cg_pos1.x + cg_size1.width < cg_pos2.x + cg_size2.width &&
                             cg_pos1.y + cg_size1.height < cg_pos2.y + cg_size2.height;
@@ -528,9 +551,8 @@ inline bool is_desktop_window(AXUIElementRef _window) {
     AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
     if (_pos) {
         CGPoint cg_pos;
-        if (AXValueGetValue(_pos, (AXValueType)kAXValueCGPointType, &cg_pos)) {
-            desktop_window = NSEqualPoints(NSPointFromCGPoint(cg_pos), NSPointFromCGPoint(desktopOrigin));
-        }
+        desktop_window = AXValueGetValue(_pos, kAXValueTypeCGPoint, &cg_pos) &&
+            NSEqualPoints(NSPointFromCGPoint(cg_pos), NSPointFromCGPoint(desktopOrigin));
         CFRelease(_pos);
     }
 
@@ -544,14 +566,14 @@ inline bool is_full_screen(AXUIElementRef _window) {
     AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
     if (_pos) {
         CGPoint cg_pos;
-        if (AXValueGetValue(_pos, (AXValueType)kAXValueCGPointType, &cg_pos)) {
+        if (AXValueGetValue(_pos, kAXValueTypeCGPoint, &cg_pos)) {
             NSScreen * screen = findScreen(cg_pos);
             if (screen) {
                 AXValueRef _size = NULL;
                 AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
                 if (_size) {
                     CGSize cg_size;
-                    if (AXValueGetValue(_size, (AXValueType)kAXValueCGSizeType, &cg_size)) {
+                    if (AXValueGetValue(_size, kAXValueTypeCGSize, &cg_size)) {
                         float menuBarHeight =
                             fmax(0, NSMaxY(screen.frame) - NSMaxY(screen.visibleFrame) - 1);
                         NSScreen * main_screen = NSScreen.screens[0];
@@ -1036,7 +1058,8 @@ void onTick() {
         // don't raise for as long as something is being dragged (resizing a window for instance)
         bool abort = CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonLeft) ||
             CGEventSourceButtonState(kCGEventSourceStateCombinedSessionState, kCGMouseButtonRight) ||
-            dock_active();
+            dock_active() ||
+            mc_active();
 
         if (!abort && disableKey) {
             CGEventRef _keyDownEvent = CGEventCreateKeyboardEvent(NULL, 0, true);

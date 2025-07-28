@@ -91,6 +91,8 @@ static AXUIElementRef _lastFocusedWindow = NULL;
 CFMachPortRef eventTap = NULL;
 static char pathBuffer[PROC_PIDPATHINFO_MAXSIZE];
 static bool activated_by_task_switcher = false;
+static bool waitingForWindowChange = false;
+static AXObserverRef windowObserver = NULL;
 static AXUIElementRef _accessibility_object = AXUIElementCreateSystemWide();
 static AXUIElementRef _previousFinderWindow = NULL;
 static AXUIElementRef _dock_app = NULL;
@@ -862,7 +864,73 @@ static MDWorkspaceWatcher * workspaceWatcher = NULL;
     } else if (verbose) { NSLog(@"Ignoring window focused event"); }
 }
 #endif
+
+- (void)onWindowFocusChanged:(NSNumber *)elementPtr {
+    if (!activated_by_task_switcher) {
+        if (verbose) { NSLog(@"Window focus changed but not from task switcher, ignoring"); }
+        return;  // Double-check filter
+    }
+    
+    if (verbose) { NSLog(@"Processing window focus change from task switcher"); }
+    
+    AXUIElementRef focusedWindow = (AXUIElementRef)elementPtr.unsignedLongValue;
+    
+    // Reuse existing warp logic but for the focused window
+    if (warpMouse && focusedWindow) {
+        CGPoint warpPoint = get_mousepoint(focusedWindow);
+        if (warpPoint.x != 0 || warpPoint.y != 0) {
+            if (verbose) { NSLog(@"Warping cursor to focused window"); }
+            CGWarpMouseCursorPosition(warpPoint);
+        }
+    }
+    
+    // Handle cursor scaling if needed
+    if (cursorScale != oldScale) {
+        if (verbose) { NSLog(@"Scheduling cursor scaling"); }
+        [self performSelector:@selector(onSetCursorScale:) 
+                   withObject:[NSNumber numberWithFloat:cursorScale] 
+                   afterDelay:SCALE_DELAY_MS/1000.0];
+        [self performSelector:@selector(onSetCursorScale:) 
+                   withObject:[NSNumber numberWithFloat:oldScale] 
+                   afterDelay:SCALE_DURATION_MS/1000.0];
+    }
+}
+
+- (void)clearWaitingForWindowChange {
+    if (waitingForWindowChange) {
+        if (verbose) { NSLog(@"Timeout: clearing waitingForWindowChange flag"); }
+        waitingForWindowChange = false;
+    }
+}
 @end // MDWorkspaceWatcher
+
+//-----------------------------------------------AX observer callback----------------------------------------------
+
+void windowFocusChangedCallback(AXObserverRef observer, AXUIElementRef element, 
+                               CFStringRef notification, void *refcon) {
+    if (!waitingForWindowChange) {
+        if (verbose) { NSLog(@"Window focus notification received but not waiting, ignoring"); }
+        return;  // Filter: only when expecting change
+    }
+    
+    if (verbose) { NSLog(@"Window focus changed notification received"); }
+    
+    waitingForWindowChange = false;
+    
+    // Get the workspace watcher from refcon (passed during setup)
+    MDWorkspaceWatcher *watcher = (__bridge MDWorkspaceWatcher *)refcon;
+    if (watcher) {
+        // Cancel the timeout since we got the notification
+        [NSObject cancelPreviousPerformRequestsWithTarget:watcher 
+                                                 selector:@selector(clearWaitingForWindowChange) 
+                                                   object:nil];
+        
+        // Delay to match existing app activation timing
+        [watcher performSelector:@selector(onWindowFocusChanged:) 
+                      withObject:[NSNumber numberWithUnsignedLong:(uint64_t)element]
+                      afterDelay:ACTIVATE_DELAY_MS/1000.0];
+    }
+}
 
 //----------------------------------------------configuration-----------------------------------------------
 
@@ -1349,47 +1417,51 @@ void onTick() {
 }
 
 CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef event, void *userInfo) {
-    // Focus-on-demand logic - handle BEFORE existing task switcher logic
-    if (focusOnDemand && (type == kCGEventKeyDown || 
+    static bool commandTabPressed = false;
+    if (type == kCGEventFlagsChanged && commandTabPressed) {
+        if (!activated_by_task_switcher) {
+            activated_by_task_switcher = true;
+            // Extend ignore period for focus-on-demand to prevent race condition
+            ignoreTimes = focusOnDemand ? 30 : 3;
+        }
+    }
+
+    commandTabPressed = false;
+    if (type == kCGEventKeyDown) {
+        CGKeyCode keycode = (CGKeyCode) CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
+        if (keycode == kVK_Tab) {
+            CGEventFlags flags = CGEventGetFlags(event);
+            commandTabPressed = (flags & kCGEventFlagMaskCommand) == kCGEventFlagMaskCommand;
+        } else if ((warpMouse || focusOnDemand) && keycode == kVK_ANSI_Grave) {
+            CGEventFlags flags = CGEventGetFlags(event);
+            if ((flags & kCGEventFlagMaskCommand) == kCGEventFlagMaskCommand) {
+                if (!activated_by_task_switcher) {
+                    activated_by_task_switcher = true;
+                    waitingForWindowChange = true;  // Set flag to wait for AX notification
+                    // Extend ignore period for focus-on-demand to prevent race condition
+                    ignoreTimes = focusOnDemand ? 30 : 3;
+                    if (verbose) { NSLog(@"Cmd+` detected, waiting for window focus change notification"); }
+                    // Schedule timeout to clear flag if notification doesn't arrive
+                    [workspaceWatcher performSelector:@selector(clearWaitingForWindowChange) 
+                                           withObject:nil 
+                                           afterDelay:1.0];  // 1 second timeout
+                    // Remove synchronous appActivated() call - now handled by AX observer
+                }
+            }
+        }
+    } else if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
+        if (verbose) { NSLog(@"Got event tap disabled event, re-enabling..."); }
+        CGEventTapEnable(eventTap, true);
+    }
+
+    // Focus-on-demand logic - handle AFTER task switcher logic
+    if (focusOnDemand && !activated_by_task_switcher && (type == kCGEventKeyDown || 
                          type == kCGEventFlagsChanged ||
                          type == kCGEventLeftMouseDown ||
                          type == kCGEventRightMouseDown ||
                          type == kCGEventOtherMouseDown ||
                          type == kCGEventScrollWheel)) {
         handleFocusOnDemand(event);
-    }
-    
-    static bool commandTabPressed = false;
-    if (type == kCGEventFlagsChanged && commandTabPressed) {
-        if (!activated_by_task_switcher) {
-            activated_by_task_switcher = true;
-            ignoreTimes = 3;
-        }
-    }
-
-    static bool commandGravePressed = false;
-    if (type == kCGEventFlagsChanged && commandGravePressed) {
-        if (!activated_by_task_switcher) {
-            activated_by_task_switcher = true;
-            ignoreTimes = 3;
-            [workspaceWatcher onAppActivated];
-        }
-    }
-
-    commandTabPressed = false;
-    commandGravePressed = false;
-    if (type == kCGEventKeyDown) {
-        CGKeyCode keycode = (CGKeyCode) CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
-        if (keycode == kVK_Tab) {
-            CGEventFlags flags = CGEventGetFlags(event);
-            commandTabPressed = (flags & kCGEventFlagMaskCommand) == kCGEventFlagMaskCommand;
-        } else if (warpMouse && keycode == kVK_ANSI_Grave) {
-            CGEventFlags flags = CGEventGetFlags(event);
-            commandGravePressed = (flags & kCGEventFlagMaskCommand) == kCGEventFlagMaskCommand;
-        }
-    } else if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
-        if (verbose) { NSLog(@"Got event tap disabled event, re-enabling..."); }
-        CGEventTapEnable(eventTap, true);
     }
 
     return event;
@@ -1547,6 +1619,31 @@ int main(int argc, const char * argv[]) {
         if (verbose) { NSLog(@"Got run loop source: %s", runLoopSource ? "YES" : "NO"); }
 
         workspaceWatcher = [[MDWorkspaceWatcher alloc] init];
+
+        // Setup AX observer for window focus changes (needed for Cmd+` cursor warp)
+        // Must be done after workspaceWatcher is created so we can pass it as refcon
+        if (warpMouse || focusOnDemand) {
+            AXError axError = AXObserverCreate(getpid(), windowFocusChangedCallback, &windowObserver);
+            if (axError == kAXErrorSuccess && windowObserver) {
+                axError = AXObserverAddNotification(windowObserver, _accessibility_object, 
+                                                   kAXFocusedWindowChangedNotification, 
+                                                   (__bridge void *)workspaceWatcher);
+                if (axError == kAXErrorSuccess) {
+                    CFRunLoopAddSource(CFRunLoopGetCurrent(), 
+                                       AXObserverGetRunLoopSource(windowObserver), 
+                                       kCFRunLoopDefaultMode);
+                    if (verbose) { NSLog(@"AX observer for window focus changes: SUCCESS"); }
+                } else {
+                    if (verbose) { NSLog(@"Failed to add AX notification: %d", axError); }
+                    if (windowObserver) {
+                        CFRelease(windowObserver);
+                        windowObserver = NULL;
+                    }
+                }
+            } else {
+                if (verbose) { NSLog(@"Failed to create AX observer: %d", axError); }
+            }
+        }
 #ifdef FOCUS_FIRST
         if (altTaskSwitcher || raiseDelayCount || delayCount) {
 #else

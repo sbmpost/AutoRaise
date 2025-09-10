@@ -1080,7 +1080,7 @@ void onTick() {
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
                 // bool needs_raise = !invertIgnoreApps;
-                needs_raise = needs_raise || !invertIgnoreApps;
+                needs_raise = !invertIgnoreApps;
                 AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
                 if (needs_raise && titleEquals(_mouseWindow, @[NoTitle, Untitled])) {
                     needs_raise = is_main_window(_mouseWindowApp, _mouseWindow, is_chrome_app(
@@ -1214,6 +1214,7 @@ void onTick() {
             }
 #endif
         } else {
+            needs_raise = false;
             raiseTimes = 0;
             delayTicks = 0;
         }

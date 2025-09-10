@@ -156,7 +156,7 @@ like so:
 
 The output should look something like this:
 
-    v5.4 by sbmpost(c) 2025, usage:
+    v5.5 by sbmpost(c) 2025, usage:
 
     AutoRaise
       -pollMillis <20, 30, 40, 50, ...>

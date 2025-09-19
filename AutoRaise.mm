@@ -129,6 +129,9 @@ static NSString * const Finder = @"Finder";
 static NSString * const NoTitle = @"";
 static CGPoint desktopOrigin = {0, 0};
 static CGPoint oldPoint = {0, 0};
+
+static bool needs_raise = false;
+
 static bool propagateMouseMoved = false;
 static bool ignoreSpaceChanged = false;
 static bool invertIgnoreApps = false;
@@ -1064,19 +1067,20 @@ void onTick() {
 
         NSRunningApplication *frontmostApp = [[NSWorkspace sharedWorkspace] frontmostApplication];
         abort = abort || [stayFocusedBundleIds containsObject: frontmostApp.bundleIdentifier];
-
+/*
         if (abort) {
             if (verbose) { NSLog(@"Abort focus/raise"); }
             raiseTimes = 0;
             delayTicks = 0;
             return;
         }
-
+*/
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
         if (_mouseWindow) {
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
-                bool needs_raise = !invertIgnoreApps;
+                // bool needs_raise = !invertIgnoreApps;
+                needs_raise = !invertIgnoreApps;
                 AXUIElementRef _mouseWindowApp = AXUIElementCreateApplication(mouseWindow_pid);
                 if (needs_raise && titleEquals(_mouseWindow, @[NoTitle, Untitled])) {
                     needs_raise = is_main_window(_mouseWindowApp, _mouseWindow, is_pwa(
@@ -1151,6 +1155,7 @@ void onTick() {
                 }
 
                 if (needs_raise) {
+/*
                     if (!delayTicks) {
                         // start the delay
                         delayTicks = delayCount;
@@ -1194,6 +1199,7 @@ void onTick() {
                         }
 #endif
                     }
+*/
                 } else {
                     raiseTimes = 0;
                     delayTicks = 0;
@@ -1207,6 +1213,7 @@ void onTick() {
             }
 #endif
         } else {
+            needs_raise = false;
             raiseTimes = 0;
             delayTicks = 0;
         }
@@ -1238,6 +1245,26 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
             CGEventFlags flags = CGEventGetFlags(event);
             commandGravePressed = (flags & TASK_SWITCHER_MODIFIER_KEY) == TASK_SWITCHER_MODIFIER_KEY;
         }
+    } else if (type == kCGEventLeftMouseDown) {
+///*
+        if (needs_raise) {
+            needs_raise = false;
+            if (verbose) { NSLog(@"Generate another mouse down"); }
+
+            // click down and up for focus
+            CGPoint mousePoint = CGEventGetLocation(event);
+            CGEventRef _event = CGEventCreateMouseEvent(NULL, kCGEventLeftMouseDown,
+                {mousePoint.x, mousePoint.y}, kCGMouseButtonLeft);
+            CGEventPost(kCGHIDEventTap, _event);
+            CGEventSetType(_event, kCGEventLeftMouseUp);
+            CGEventPost(kCGHIDEventTap, _event);
+            CFRelease(_event);
+
+            // pass original down event
+            CGEventPost(kCGHIDEventTap, event);
+            return NULL;
+        }
+//*/
     } else if (type == kCGEventTapDisabledByTimeout || type == kCGEventTapDisabledByUserInput) {
         if (verbose) { NSLog(@"Got event tap disabled event, re-enabling..."); }
         CGEventTapEnable(eventTap, true);
@@ -1373,9 +1400,15 @@ int main(int argc, const char * argv[]) {
         if (verbose) { NSLog(@"System cursor scale: %f", oldScale); }
 
         CFRunLoopSourceRef runLoopSource = NULL;
-        eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionDefault,
-            CGEventMaskBit(kCGEventKeyDown) | CGEventMaskBit(kCGEventFlagsChanged),
-            eventTapHandler, NULL);
+        eventTap = CGEventTapCreate(
+            kCGSessionEventTap,
+            kCGHeadInsertEventTap,
+            kCGEventTapOptionDefault, // kCGEventTapOptionListenOnly
+            CGEventMaskBit(kCGEventKeyDown) |
+            CGEventMaskBit(kCGEventFlagsChanged) |
+            CGEventMaskBit(kCGEventLeftMouseDown),
+            eventTapHandler,
+            NULL);
         if (eventTap) {
             runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0);
             if (runLoopSource) {

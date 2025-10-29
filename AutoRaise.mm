@@ -385,8 +385,8 @@ CGPoint get_mousepoint(AXUIElementRef _window) {
         if (_pos) {
             CGSize cg_size;
             CGPoint cg_pos;
-            if (AXValueGetValue(_size, kAXValueCGSizeType, &cg_size) &&
-                AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos)) {
+            if (AXValueGetValue(_size, (AXValueType)kAXValueCGSizeType, &cg_size) &&
+                AXValueGetValue(_pos, (AXValueType)kAXValueCGPointType, &cg_pos)) {
                 mousepoint.x = cg_pos.x + (cg_size.width * warpX);
                 mousepoint.y = cg_pos.y + (cg_size.height * warpY);
             }
@@ -417,10 +417,10 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
                     CGSize cg_size2;
                     CGPoint cg_pos1;
                     CGPoint cg_pos2;
-                    if (AXValueGetValue(_size1, kAXValueCGSizeType, &cg_size1) &&
-                        AXValueGetValue(_pos1, kAXValueCGPointType, &cg_pos1) &&
-                        AXValueGetValue(_size2, kAXValueCGSizeType, &cg_size2) &&
-                        AXValueGetValue(_pos2, kAXValueCGPointType, &cg_pos2)) {
+                    if (AXValueGetValue(_size1, (AXValueType)kAXValueCGSizeType, &cg_size1) &&
+                        AXValueGetValue(_pos1, (AXValueType)kAXValueCGPointType, &cg_pos1) &&
+                        AXValueGetValue(_size2, (AXValueType)kAXValueCGSizeType, &cg_size2) &&
+                        AXValueGetValue(_pos2, (AXValueType)kAXValueCGPointType, &cg_pos2)) {
                         contained = cg_pos1.x >= cg_pos2.x && cg_pos1.y >= cg_pos2.y &&
                             cg_pos1.x + cg_size1.width <= cg_pos2.x + cg_size2.width &&
                             cg_pos1.y + cg_size1.height <= cg_pos2.y + cg_size2.height;
@@ -472,7 +472,7 @@ inline bool desktop_window(AXUIElementRef _window) {
     AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
     if (_pos) {
         CGPoint cg_pos;
-        desktop_window = AXValueGetValue(_pos, kAXValueCGPointType, &cg_pos) &&
+        desktop_window = AXValueGetValue(_pos, (AXValueType)kAXValueCGPointType, &cg_pos) &&
             NSEqualPoints(NSPointFromCGPoint(cg_pos), NSPointFromCGPoint(desktopOrigin));
         CFRelease(_pos);
     }
@@ -1073,7 +1073,7 @@ int main(int argc, const char * argv[]) {
         if (verbose) { NSLog(@"System cursor scale: %f", oldScale); }
 
         CFRunLoopSourceRef runLoopSource = NULL;
-        CFMachPortRef eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, 0,
+        CFMachPortRef eventTap = CGEventTapCreate(kCGSessionEventTap, kCGHeadInsertEventTap, kCGEventTapOptionDefault,
             (1 << kCGEventKeyDown) | (1 << kCGEventFlagsChanged), eventTapHandler, NULL);
         if (eventTap) {
             runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0);

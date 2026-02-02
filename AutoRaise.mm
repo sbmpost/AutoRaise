@@ -113,7 +113,8 @@ static NSArray * pwas = @[
     @"Vivaldi",
     @"Brave",
     @"Opera",
-    @"edgemac"
+    @"edgemac",
+    @"helium"
 ];
 static NSString * const DockBundleId = @"com.apple.dock";
 static NSString * const FinderBundleId = @"com.apple.finder";

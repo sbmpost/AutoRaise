@@ -314,6 +314,31 @@ inline bool mc_active() {
     return active;
 }
 
+bool frontmost_app_has_window_at(CGPoint point) {
+    pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
+    NSArray * window_list = (NSArray *) CFBridgingRelease(CGWindowListCopyWindowInfo(
+        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+        kCGNullWindowID));
+
+    for (NSDictionary * window in window_list) {
+        pid_t pid = [window[(__bridge id) kCGWindowOwnerPID] intValue];
+        if (pid != frontmost_pid) { continue; }
+        int layer = [window[(__bridge id) kCGWindowLayer] intValue];
+        if (layer == 0) { continue; } // skip normal windows, only check overlays
+        NSDictionary * window_bounds_dict = window[(NSString *) CFBridgingRelease(kCGWindowBounds)];
+        NSRect window_bounds = NSMakeRect(
+            [window_bounds_dict[@"X"] intValue],
+            [window_bounds_dict[@"Y"] intValue],
+            [window_bounds_dict[@"Width"] intValue],
+            [window_bounds_dict[@"Height"] intValue]);
+        if (NSPointInRect(NSPointFromCGPoint(point), window_bounds)) {
+            if (verbose) { NSLog(@"Frontmost app has overlay window (layer %d) at cursor", layer); }
+            return true;
+        }
+    }
+    return false;
+}
+
 NSDictionary * topwindow(CGPoint point) {
     NSDictionary * top_window = NULL;
     NSArray * window_list = (NSArray *) CFBridgingRelease(CGWindowListCopyWindowInfo(
@@ -1170,6 +1195,14 @@ void onTick() {
                 ProcessSerialNumber focusedWindow_psn;
                 ProcessSerialNumber * _focusedWindow_psn = NULL;
 #endif
+                if (needs_raise) {
+                    pid_t frontmost_pid = frontmostApp.processIdentifier;
+                    if (mouseWindow_pid != frontmost_pid && frontmost_app_has_window_at(mousePoint)) {
+                        needs_raise = false;
+                        if (verbose) { NSLog(@"Skipping raise: frontmost app has overlay at cursor"); }
+                    }
+                }
+
                 if (needs_raise) {
                     pid_t frontmost_pid = frontmostApp.processIdentifier;
                     AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);

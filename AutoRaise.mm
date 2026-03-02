@@ -1170,6 +1170,7 @@ void onTick() {
                 ProcessSerialNumber focusedWindow_psn;
                 ProcessSerialNumber * _focusedWindow_psn = NULL;
 #endif
+                bool needs_raise_and_not_contained_within = false;
                 if (needs_raise) {
                     pid_t frontmost_pid = frontmostApp.processIdentifier;
                     AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
@@ -1182,15 +1183,17 @@ void onTick() {
                         if (verbose) { logWindowTitle(@"Focused window", _focusedWindow); }
                         _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
                         needs_raise = mouseWindow_id != focusedWindow_id;
+                        needs_raise_and_not_contained_within = needs_raise &&
+                            !contained_within(_focusedWindow, _mouseWindow);
 #ifdef FOCUS_FIRST
                         if (!focus_first) {
 #endif
-                            needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
+                            needs_raise = needs_raise_and_not_contained_within;
 #ifdef FOCUS_FIRST
                         } else {
                             needs_raise = needs_raise && is_main_window(_frontmostApp, _focusedWindow,
                                 is_pwa(frontmostApp.bundleIdentifier)) && ((mouseWindow_pid != frontmost_pid &&
-                                !workaround_for_apps_raising_on_focus) || !contained_within(_focusedWindow, _mouseWindow));
+                                !workaround_for_apps_raising_on_focus) || needs_raise_and_not_contained_within);
                             if (needs_raise) {
                                 OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);
                                 if (!error) { _focusedWindow_psn = &focusedWindow_psn; }
@@ -1248,7 +1251,9 @@ void onTick() {
                                 if (_lastFocusedWindow) { CFRelease(_lastFocusedWindow); }
                                 _lastFocusedWindow = _mouseWindow;
                                 lastFocusedWindow_pid = mouseWindow_pid;
-                                if (raiseDelayCount) { [workspaceWatcher windowFocused: _lastFocusedWindow]; }
+                                if (raiseDelayCount && needs_raise_and_not_contained_within) {
+                                    [workspaceWatcher windowFocused: _lastFocusedWindow];
+                                }
                             }
                         } else {
 #endif

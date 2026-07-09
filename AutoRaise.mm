@@ -544,6 +544,51 @@ bool contained_within(AXUIElementRef _window1, AXUIElementRef _window2) {
     return contained;
 }
 
+// Window managers like AeroSpace "hide" windows of inactive workspaces by moving
+// them almost entirely offscreen, keeping a ~1px sliver visible in a bottom corner
+// (macOS refuses to place windows fully outside the visible area). Raising such a
+// window switches the workspace, which parks the previously visible window in the
+// same corner, causing an infinite focus/raise loop. Ignore windows with less than
+// OFFSCREEN_MIN_VISIBLE pixels visible on their best screen.
+#define OFFSCREEN_MIN_VISIBLE 4
+bool mostly_offscreen(AXUIElementRef _window) {
+    bool offscreen = false;
+    AXValueRef _size = NULL;
+    AXValueRef _pos = NULL;
+    AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
+    if (_size) {
+        AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
+        if (_pos) {
+            CGSize cg_size;
+            CGPoint cg_pos;
+            if (AXValueGetValue(_size, kAXValueTypeCGSize, &cg_size) &&
+                AXValueGetValue(_pos, kAXValueTypeCGPoint, &cg_pos)) {
+                // AX coordinates are top-left based; NSScreen frames are
+                // bottom-left based, so flip them relative to the primary screen.
+                float primaryHeight = NSHeight([NSScreen.screens objectAtIndex: 0].frame);
+                NSRect window_rect = NSMakeRect(cg_pos.x, cg_pos.y,
+                    cg_size.width, cg_size.height);
+                NSRect best_intersection = NSZeroRect;
+                for (NSScreen * screen in NSScreen.screens) {
+                    NSRect frame = screen.frame;
+                    NSRect cg_frame = NSMakeRect(NSMinX(frame),
+                        primaryHeight - NSMaxY(frame), NSWidth(frame), NSHeight(frame));
+                    NSRect intersection = NSIntersectionRect(window_rect, cg_frame);
+                    if (NSWidth(intersection) * NSHeight(intersection) >
+                        NSWidth(best_intersection) * NSHeight(best_intersection)) {
+                        best_intersection = intersection;
+                    }
+                }
+                offscreen = NSWidth(best_intersection) < OFFSCREEN_MIN_VISIBLE ||
+                    NSHeight(best_intersection) < OFFSCREEN_MIN_VISIBLE;
+            }
+            CFRelease(_pos);
+        }
+        CFRelease(_size);
+    }
+    return offscreen;
+}
+
 void findDockApplication() {
     NSArray * _apps = [[NSWorkspace sharedWorkspace] runningApplications];
     for (NSRunningApplication * app in _apps) {
@@ -1162,6 +1207,10 @@ void onTick() {
 #ifdef FOCUS_FIRST
                     workaround_for_apps_raising_on_focus = titleEquals(_mouseWindowApp, AppsRaisingOnFocus);
 #endif
+                }
+                if (needs_raise && mostly_offscreen(_mouseWindow)) {
+                    needs_raise = false;
+                    if (verbose) { NSLog(@"Excluding offscreen window"); }
                 }
                 CFRelease(_mouseWindowApp);
                 CGWindowID focusedWindow_id;

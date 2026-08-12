@@ -314,6 +314,25 @@ inline bool mc_active() {
     return active;
 }
 
+// Some apps (e.g. Telegram) keep a permanent screen-sized window at a non-zero
+// CGWindowLevel for their own click-outside-to-dismiss tracking, even when no
+// popup is actually showing. That's not a real contextual overlay, so it must
+// not count as one, or every raise gets suppressed for as long as that app is
+// frontmost. A real menu/tooltip/popover is content-sized, not screen-sized.
+bool covers_display(NSRect window_bounds, CGPoint point) {
+    CGDirectDisplayID displays[16];
+    uint32_t display_count = 0;
+    CGGetActiveDisplayList(16, displays, &display_count);
+    for (uint32_t i = 0; i < display_count; i++) {
+        CGRect display_bounds = CGDisplayBounds(displays[i]);
+        if (CGRectContainsPoint(display_bounds, point)) {
+            return window_bounds.size.width >= display_bounds.size.width * 0.9 &&
+                   window_bounds.size.height >= display_bounds.size.height * 0.9;
+        }
+    }
+    return false;
+}
+
 bool frontmost_app_has_window_at(CGPoint point) {
     pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
     NSArray * window_list = (NSArray *) CFBridgingRelease(CGWindowListCopyWindowInfo(
@@ -331,6 +350,7 @@ bool frontmost_app_has_window_at(CGPoint point) {
             [window_bounds_dict[@"Y"] intValue],
             [window_bounds_dict[@"Width"] intValue],
             [window_bounds_dict[@"Height"] intValue]);
+        if (covers_display(window_bounds, point)) { continue; } // permanent tracking window, not a real overlay
         if (NSPointInRect(NSPointFromCGPoint(point), window_bounds)) {
             if (verbose) { NSLog(@"Frontmost app has overlay window (layer %d) at cursor", layer); }
             return true;

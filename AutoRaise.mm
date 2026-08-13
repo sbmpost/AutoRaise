@@ -1241,8 +1241,23 @@ void onTick() {
                             needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
 #ifdef FOCUS_FIRST
                         } else {
-                            needs_raise = needs_raise && is_main_window(_frontmostApp, _focusedWindow,
-                                is_pwa(frontmostApp.bundleIdentifier)) && ((mouseWindow_pid != frontmost_pid &&
+                            // The is_main_window(_frontmostApp, _focusedWindow, ...) requirement that
+                            // used to be part of this condition is deliberately gone. It blocked
+                            // focus-follows-mouse entirely whenever the frontmost app's focused window
+                            // was not a main window, and a macOS QuickLook preview panel (Telegram
+                            // attachments, Finder spacebar, Mail) reports kAXMain = false. The result
+                            // was that opening any QuickLook preview wedged focus until you clicked
+                            // another app: every tick logged "Not a main window" and gave up.
+                            //
+                            // Why remove it outright rather than special-case QuickLook: the panel has
+                            // no stable non-localised marker to key on — its only distinguishing
+                            // attribute is the title "Quick Look" — and the same block hits every other
+                            // floating focused window too. Upstream added the check in 72c17a0 for the
+                            // desktop window and the Photos app (issue #80, "floating windows are the
+                            // ones that can't be focused"), so dropping it may let a focus loop back in
+                            // for those two. That trade was made knowingly: QuickLook is used daily
+                            // here, the desktop/Photos cases are not.
+                            needs_raise = needs_raise && ((mouseWindow_pid != frontmost_pid &&
                                 !workaround_for_apps_raising_on_focus) || !contained_within(_focusedWindow, _mouseWindow));
                             if (needs_raise) {
                                 OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);

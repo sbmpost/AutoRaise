@@ -359,24 +359,83 @@ bool frontmost_app_has_window_at(CGPoint point) {
     return false;
 }
 
+// A window that is not at layer 0 is normally system chrome or a transient popup --
+// menu bar, Dock, context menu, tooltip -- which must never be treated as the window
+// under the cursor. That is what the layer 0 filter here is for, and for everything
+// except one shape it is right.
+//
+// The exception is a full-screen modal overlay owned by the active app, such as
+// Telegram's photo viewer (level 101, exactly display sized). It is the only thing
+// visible at the cursor, yet a layer-0-only filter looks straight through it and
+// returns whichever ordinary window happens to sit behind it. AutoRaise then focuses
+// that other app through the overlay; Telegram deactivates and hides the viewer, so
+// the viewer blinks out whenever the cursor crosses off the main window and back.
+//
+// Why fix it here rather than in frontmost_app_has_window_at(): that guard only
+// suppresses a raise once this function has already reported a window that is not
+// actually visible. The false statement originates here, so the correction belongs
+// here -- and once this returns the overlay, the existing focusedWindow_id and
+// contained_within() checks already conclude there is nothing to do, with no new
+// suppression rule to maintain.
+//
+// Each condition below excludes a real window observed on this machine, so none of
+// them is speculative:
+//
+//   layer > 0        a negative level is a backdrop painted BEHIND normal windows,
+//                    not an overlay. Migration Assistant keeps a screen-sized one at
+//                    level -1 that would otherwise win wherever no window covers the
+//                    cursor.
+//   frontmost app    scopes this to "the active app is covering the screen and we are
+//                    about to look through it". A background app's full-screen window
+//                    is not something to start raising on hover.
+//   regular app      the Dock owns a permanent screen-sized window at level 20 and the
+//                    WindowServer owns the menu bar at level 24. Neither is a regular
+//                    app and neither may ever be raised.
+//   covers_display   a modal overlay spans the display. Content-sized popups keep the
+//                    old behaviour and stay invisible to this function -- Telegram's
+//                    context menu (level 1000) and its reaction bar (level 101) are
+//                    both far smaller than the screen.
+//   alpha > 0        a fully transparent window paints nothing, so it is a click
+//                    catcher rather than something the user can see and mean.
+// frontmost_is_regular is passed in rather than looked up per window so that this
+// stays a pure function of the window list -- it is the one input that cannot be read
+// back from a captured CGWindowList, and tests/topwindow_test.mm replays exactly such
+// a capture.
+bool is_window_under_cursor(NSDictionary * window, CGPoint point,
+    pid_t frontmost_pid, bool frontmost_is_regular) {
+    NSDictionary * window_bounds_dict = window[(__bridge id) kCGWindowBounds];
+    NSRect window_bounds = NSMakeRect(
+        [window_bounds_dict[@"X"] intValue],
+        [window_bounds_dict[@"Y"] intValue],
+        [window_bounds_dict[@"Width"] intValue],
+        [window_bounds_dict[@"Height"] intValue]);
+
+    if (!NSPointInRect(NSPointFromCGPoint(point), window_bounds)) { return false; }
+
+    int layer = [window[(__bridge id) kCGWindowLayer] intValue];
+    if (layer == 0) { return true; }
+    if (layer < 0) { return false; }
+
+    if (!frontmost_is_regular) { return false; }
+    if ([window[(__bridge id) kCGWindowOwnerPID] intValue] != frontmost_pid) { return false; }
+    if ([window[(__bridge id) kCGWindowAlpha] floatValue] <= 0) { return false; }
+
+    return covers_display(window_bounds, point);
+}
+
 NSDictionary * topwindow(CGPoint point) {
     NSDictionary * top_window = NULL;
+    NSRunningApplication * frontmost_app = [[NSWorkspace sharedWorkspace] frontmostApplication];
+    pid_t frontmost_pid = frontmost_app.processIdentifier;
+    bool frontmost_is_regular =
+        frontmost_app.activationPolicy == NSApplicationActivationPolicyRegular;
     NSArray * window_list = (NSArray *) CFBridgingRelease(CGWindowListCopyWindowInfo(
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
         kCGNullWindowID));
 
+    // the list is ordered front to back, so the first acceptable hit is the topmost
     for (NSDictionary * window in window_list) {
-        NSDictionary * window_bounds_dict = window[(NSString *) CFBridgingRelease(kCGWindowBounds)];
-
-        if (![window[(__bridge id) kCGWindowLayer] isEqual: @0]) { continue; }
-
-        NSRect window_bounds = NSMakeRect(
-            [window_bounds_dict[@"X"] intValue],
-            [window_bounds_dict[@"Y"] intValue],
-            [window_bounds_dict[@"Width"] intValue],
-            [window_bounds_dict[@"Height"] intValue]);
-
-        if (NSPointInRect(NSPointFromCGPoint(point), window_bounds)) {
+        if (is_window_under_cursor(window, point, frontmost_pid, frontmost_is_regular)) {
             top_window = window;
             break;
         }

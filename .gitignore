@@ -2,3 +2,7 @@ AutoRaise
 AutoRaise.out
 AutoRaise.app
 *~
+
+# test build artifacts
+tests/topwindow_test
+tests/*.o

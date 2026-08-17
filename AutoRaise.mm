@@ -314,24 +314,128 @@ inline bool mc_active() {
     return active;
 }
 
-NSDictionary * topwindow(CGPoint point) {
-    NSDictionary * top_window = NULL;
+// Some apps (e.g. Telegram) keep a permanent screen-sized window at a non-zero
+// CGWindowLevel for their own click-outside-to-dismiss tracking, even when no
+// popup is actually showing. That's not a real contextual overlay, so it must
+// not count as one, or every raise gets suppressed for as long as that app is
+// frontmost. A real menu/tooltip/popover is content-sized, not screen-sized.
+bool covers_display(NSRect window_bounds, CGPoint point) {
+    CGDirectDisplayID displays[16];
+    uint32_t display_count = 0;
+    CGGetActiveDisplayList(16, displays, &display_count);
+    for (uint32_t i = 0; i < display_count; i++) {
+        CGRect display_bounds = CGDisplayBounds(displays[i]);
+        if (CGRectContainsPoint(display_bounds, point)) {
+            return window_bounds.size.width >= display_bounds.size.width * 0.9 &&
+                   window_bounds.size.height >= display_bounds.size.height * 0.9;
+        }
+    }
+    return false;
+}
+
+bool frontmost_app_has_window_at(CGPoint point) {
+    pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
     NSArray * window_list = (NSArray *) CFBridgingRelease(CGWindowListCopyWindowInfo(
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
         kCGNullWindowID));
 
     for (NSDictionary * window in window_list) {
+        pid_t pid = [window[(__bridge id) kCGWindowOwnerPID] intValue];
+        if (pid != frontmost_pid) { continue; }
+        int layer = [window[(__bridge id) kCGWindowLayer] intValue];
+        if (layer == 0) { continue; } // skip normal windows, only check overlays
         NSDictionary * window_bounds_dict = window[(NSString *) CFBridgingRelease(kCGWindowBounds)];
-
-        if (![window[(__bridge id) kCGWindowLayer] isEqual: @0]) { continue; }
-
         NSRect window_bounds = NSMakeRect(
             [window_bounds_dict[@"X"] intValue],
             [window_bounds_dict[@"Y"] intValue],
             [window_bounds_dict[@"Width"] intValue],
             [window_bounds_dict[@"Height"] intValue]);
-
+        if (covers_display(window_bounds, point)) { continue; } // permanent tracking window, not a real overlay
         if (NSPointInRect(NSPointFromCGPoint(point), window_bounds)) {
+            if (verbose) { NSLog(@"Frontmost app has overlay window (layer %d) at cursor", layer); }
+            return true;
+        }
+    }
+    return false;
+}
+
+// A window that is not at layer 0 is normally system chrome or a transient popup --
+// menu bar, Dock, context menu, tooltip -- which must never be treated as the window
+// under the cursor. That is what the layer 0 filter here is for, and for everything
+// except one shape it is right.
+//
+// The exception is a full-screen modal overlay owned by the active app, such as
+// Telegram's photo viewer (level 101, exactly display sized). It is the only thing
+// visible at the cursor, yet a layer-0-only filter looks straight through it and
+// returns whichever ordinary window happens to sit behind it. AutoRaise then focuses
+// that other app through the overlay; Telegram deactivates and hides the viewer, so
+// the viewer blinks out whenever the cursor crosses off the main window and back.
+//
+// Why fix it here rather than in frontmost_app_has_window_at(): that guard only
+// suppresses a raise once this function has already reported a window that is not
+// actually visible. The false statement originates here, so the correction belongs
+// here -- and once this returns the overlay, the existing focusedWindow_id and
+// contained_within() checks already conclude there is nothing to do, with no new
+// suppression rule to maintain.
+//
+// Each condition below excludes a real window observed on this machine, so none of
+// them is speculative:
+//
+//   layer > 0        a negative level is a backdrop painted BEHIND normal windows,
+//                    not an overlay. Migration Assistant keeps a screen-sized one at
+//                    level -1 that would otherwise win wherever no window covers the
+//                    cursor.
+//   frontmost app    scopes this to "the active app is covering the screen and we are
+//                    about to look through it". A background app's full-screen window
+//                    is not something to start raising on hover.
+//   regular app      the Dock owns a permanent screen-sized window at level 20 and the
+//                    WindowServer owns the menu bar at level 24. Neither is a regular
+//                    app and neither may ever be raised.
+//   covers_display   a modal overlay spans the display. Content-sized popups keep the
+//                    old behaviour and stay invisible to this function -- Telegram's
+//                    context menu (level 1000) and its reaction bar (level 101) are
+//                    both far smaller than the screen.
+//   alpha > 0        a fully transparent window paints nothing, so it is a click
+//                    catcher rather than something the user can see and mean.
+// frontmost_is_regular is passed in rather than looked up per window so that this
+// stays a pure function of the window list -- it is the one input that cannot be read
+// back from a captured CGWindowList, and tests/topwindow_test.mm replays exactly such
+// a capture.
+bool is_window_under_cursor(NSDictionary * window, CGPoint point,
+    pid_t frontmost_pid, bool frontmost_is_regular) {
+    NSDictionary * window_bounds_dict = window[(__bridge id) kCGWindowBounds];
+    NSRect window_bounds = NSMakeRect(
+        [window_bounds_dict[@"X"] intValue],
+        [window_bounds_dict[@"Y"] intValue],
+        [window_bounds_dict[@"Width"] intValue],
+        [window_bounds_dict[@"Height"] intValue]);
+
+    if (!NSPointInRect(NSPointFromCGPoint(point), window_bounds)) { return false; }
+
+    int layer = [window[(__bridge id) kCGWindowLayer] intValue];
+    if (layer == 0) { return true; }
+    if (layer < 0) { return false; }
+
+    if (!frontmost_is_regular) { return false; }
+    if ([window[(__bridge id) kCGWindowOwnerPID] intValue] != frontmost_pid) { return false; }
+    if ([window[(__bridge id) kCGWindowAlpha] floatValue] <= 0) { return false; }
+
+    return covers_display(window_bounds, point);
+}
+
+NSDictionary * topwindow(CGPoint point) {
+    NSDictionary * top_window = NULL;
+    NSRunningApplication * frontmost_app = [[NSWorkspace sharedWorkspace] frontmostApplication];
+    pid_t frontmost_pid = frontmost_app.processIdentifier;
+    bool frontmost_is_regular =
+        frontmost_app.activationPolicy == NSApplicationActivationPolicyRegular;
+    NSArray * window_list = (NSArray *) CFBridgingRelease(CGWindowListCopyWindowInfo(
+        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+        kCGNullWindowID));
+
+    // the list is ordered front to back, so the first acceptable hit is the topmost
+    for (NSDictionary * window in window_list) {
+        if (is_window_under_cursor(window, point, frontmost_pid, frontmost_is_regular)) {
             top_window = window;
             break;
         }
@@ -1172,6 +1276,14 @@ void onTick() {
 #endif
                 if (needs_raise) {
                     pid_t frontmost_pid = frontmostApp.processIdentifier;
+                    if (mouseWindow_pid != frontmost_pid && frontmost_app_has_window_at(mousePoint)) {
+                        needs_raise = false;
+                        if (verbose) { NSLog(@"Skipping raise: frontmost app has overlay at cursor"); }
+                    }
+                }
+
+                if (needs_raise) {
+                    pid_t frontmost_pid = frontmostApp.processIdentifier;
                     AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
                     AXUIElementRef _focusedWindow = NULL;
                     AXUIElementCopyAttributeValue(
@@ -1188,8 +1300,23 @@ void onTick() {
                             needs_raise = needs_raise && !contained_within(_focusedWindow, _mouseWindow);
 #ifdef FOCUS_FIRST
                         } else {
-                            needs_raise = needs_raise && is_main_window(_frontmostApp, _focusedWindow,
-                                is_pwa(frontmostApp.bundleIdentifier)) && ((mouseWindow_pid != frontmost_pid &&
+                            // The is_main_window(_frontmostApp, _focusedWindow, ...) requirement that
+                            // used to be part of this condition is deliberately gone. It blocked
+                            // focus-follows-mouse entirely whenever the frontmost app's focused window
+                            // was not a main window, and a macOS QuickLook preview panel (Telegram
+                            // attachments, Finder spacebar, Mail) reports kAXMain = false. The result
+                            // was that opening any QuickLook preview wedged focus until you clicked
+                            // another app: every tick logged "Not a main window" and gave up.
+                            //
+                            // Why remove it outright rather than special-case QuickLook: the panel has
+                            // no stable non-localised marker to key on — its only distinguishing
+                            // attribute is the title "Quick Look" — and the same block hits every other
+                            // floating focused window too. Upstream added the check in 72c17a0 for the
+                            // desktop window and the Photos app (issue #80, "floating windows are the
+                            // ones that can't be focused"), so dropping it may let a focus loop back in
+                            // for those two. That trade was made knowingly: QuickLook is used daily
+                            // here, the desktop/Photos cases are not.
+                            needs_raise = needs_raise && ((mouseWindow_pid != frontmost_pid &&
                                 !workaround_for_apps_raising_on_focus) || !contained_within(_focusedWindow, _mouseWindow));
                             if (needs_raise) {
                                 OSStatus error = GetProcessForPID(frontmost_pid, &focusedWindow_psn);

@@ -58,7 +58,7 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
 **Command line usage:**
 
-    ./AutoRaise -pollMillis 50 -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -altTaskSwitcher false -requireMouseStop false -ignoreSpaceChanged false -ignoreApps "App1,App2" -ignoreTitles "^window$" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
+    ./AutoRaise -pollMillis 50 -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -altTaskSwitcher false -requireMouseStop false -requireMultipleScreens false -ignoreSpaceChanged false -ignoreApps "App1,App2" -ignoreTitles "^window$" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
 
 *Note*: focusDelay is only supported when compiled with the "EXPERIMENTAL_FOCUS_FIRST" flag.
 
@@ -77,6 +77,9 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
   - altTaskSwitcher: Set to true if you use 3rd party tools to switch between applications (other than standard command-tab).
 
   - requireMouseStop: Require the mouse to stop moving before raise/focus. The default is true.
+
+  - requireMultipleScreens: Only raise/focus when 2 or more screens are active. Useful if you only want
+  hover based focus/raise while working with an external monitor connected. The default is false.
 
   - ignoreSpaceChanged: Do not immediately raise/focus after a space change. The default is false.
 
@@ -108,6 +111,7 @@ AutoRaise can read these parameters from a configuration file. To make this happ
     scale=2.5
     altTaskSwitcher=false
     requireMouseStop=true
+    requireMultipleScreens=false
     ignoreSpaceChanged=false
     invertDisableKey=false
     invertIgnoreApps=false
@@ -171,6 +175,7 @@ The output should look something like this:
       -warpX <0.5> -warpY <0.5> -scale <2.0>
       -altTaskSwitcher <true|false>
       -requireMouseStop <true|false>
+      -requireMultipleScreens <true|false>
       -ignoreSpaceChanged <true|false>
       -invertDisableKey <true|false>
       -invertIgnoreApps <true|false>
@@ -185,6 +190,7 @@ The output should look something like this:
       * pollMillis: 50ms
       * delay: 0ms
       * focusDelay: disabled
+      * requireMultipleScreens: false
       * ignoreSpaceChanged: false
       * invertDisableKey: false
       * invertIgnoreApps: false

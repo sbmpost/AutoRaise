@@ -50,11 +50,32 @@ Example advanced compilation command:
 After making the project, you end up with these two files:
 
     AutoRaise (command line version)
-    AutoRaise.app (version without GUI)
+    AutoRaise.app (menu bar version)
 
 The first binary is to be used directly from the command line and accepts parameters. The second binary, AutoRaise.app, can
-be used without a terminal window and relies on the presence of a configuration file. AutoRaise.app runs on the background and
-can only be stopped via "Activity Monitor" or the AppleScript provided near the bottom of this README.
+be used without a terminal window and relies on the presence of a configuration file, which it can also edit itself through
+its own Preferences window (see below). AutoRaise.app runs in the background and can only be stopped via "Activity Monitor",
+the AppleScript provided near the bottom of this README, or Cmd-Q while its Preferences window is focused.
+
+**AutoRaise.app menu bar icon**
+
+  - Left click: toggle AutoRaise on/off. If Accessibility permission is missing, left click re-requests it instead
+  (see below).
+
+  - Right click: opens a menu with Preferences, a "Reveal Config File in Finder" shortcut, a manual "Grant Accessibility
+  Permission" action, and Quit.
+
+  - Preferences window: every checkbox/field mirrors a command line parameter above, applies immediately, and is saved
+  to the config file as you change it -- there is no separate Save step. Cmd-W closes the window.
+
+The icon itself reflects three states: enabled, disabled, and a warning triangle shown whenever AutoRaise does not
+currently have Accessibility permission -- it checks this every couple of seconds, in both directions, so raise/focus
+resumes on its own as soon as permission is granted, without needing a restart.
+
+*Note for anyone compiling their own AutoRaise.app*: an ad-hoc-signed rebuild changes the app's code signature, which
+can leave a *stale* Accessibility entry behind -- same app in System Settings, but the grant no longer matches the new
+binary, and every raise/focus attempt silently fails. If the warning triangle appears after a rebuild, remove the
+entry from Privacy & Security > Accessibility and add it back rather than just toggling it off and on.
 
 **Command line usage:**
 

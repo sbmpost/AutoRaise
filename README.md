@@ -64,7 +64,7 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
 **Command line usage:**
 
-    ./AutoRaise -pollMillis 50 -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -altTaskSwitcher false -requireMouseStop false -requireMultipleScreens false -ignoreSpaceChanged false -ignoreApps "App1,App2" -ignoreTitles "^window$" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
+    ./AutoRaise -pollMillis 50 -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -altTaskSwitcher false -requireMouseStop false -requireMultipleScreens false -requireScreenChange false -ignoreSpaceChanged false -ignoreApps "App1,App2" -ignoreTitles "^window$" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
 
 *Note*: focusDelay is only supported when compiled with the "EXPERIMENTAL_FOCUS_FIRST" flag.
 
@@ -85,6 +85,9 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
   - requireMouseStop: Require the mouse to stop moving before raise/focus. The default is true.
 
   - requireMultipleScreens: Only raise/focus while two or more screens are connected. The default is false.
+
+  - requireScreenChange: Only raise/focus when the window under the mouse is on a different screen than the window
+    that currently has focus. The default is false.
 
   - ignoreSpaceChanged: Do not immediately raise/focus after a space change. The default is false.
 
@@ -118,6 +121,7 @@ AutoRaise can read these parameters from a configuration file. To make this happ
     altTaskSwitcher=false
     requireMouseStop=true
     requireMultipleScreens=false
+    requireScreenChange=false
     ignoreSpaceChanged=false
     invertDisableKey=false
     invertIgnoreApps=false
@@ -182,6 +186,7 @@ The output should look something like this:
       -altTaskSwitcher <true|false>
       -requireMouseStop <true|false>
       -requireMultipleScreens <true|false>
+      -requireScreenChange <true|false>
       -ignoreSpaceChanged <true|false>
       -invertDisableKey <true|false>
       -invertIgnoreApps <true|false>

@@ -95,6 +95,7 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
   - ignoreTitles: Comma separated list of window titles (a title can be an ICU regular expression) for which you would like to disable focus/raise.
 
   - stayFocusedBundleIds: Comma separated list of app bundle identifiers that shouldn't lose focus even when hovering the mouse over another window.
+    For example com.apple.screencaptureui keeps focus where it is while a screenshot region is being selected.
 
   - disableKey: Set to control, option or disabled. This will temporarily disable AutoRaise while holding the specified key. The default is control.
 
@@ -119,7 +120,7 @@ AutoRaise can read these parameters from a configuration file. To make this happ
     invertIgnoreApps=false
     ignoreApps="IntelliJ IDEA,WebStorm"
     ignoreTitles="\\s\\| Microsoft Teams,^window$,..."
-    stayFocusedBundleIds="com.apple.SecurityAgent,..."
+    stayFocusedBundleIds="com.apple.SecurityAgent,com.apple.screencaptureui,..."
     disableKey="control"
     mouseDelta=0.1
 

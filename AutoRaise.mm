@@ -585,6 +585,45 @@ inline NSScreen * findScreen(CGPoint point) {
     return NULL;
 }
 
+// Tiling window managers park windows of inactive workspaces almost fully
+// offscreen, leaving only the few pixels macOS insists on. Raising such a sliver
+// switches workspace and parks the previous window in its place, which without
+// this check makes the two raise each other indefinitely.
+#define MIN_VISIBLE 4
+inline bool mostly_offscreen(AXUIElementRef _window, CGPoint point) {
+    bool offscreen = false;
+    NSScreen * screen = findScreen(point);
+    if (screen) {
+        AXValueRef _size = NULL;
+        AXValueRef _pos = NULL;
+        AXUIElementCopyAttributeValue(_window, kAXSizeAttribute, (CFTypeRef *) &_size);
+        if (_size) {
+            AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
+            if (_pos) {
+                CGSize cg_size;
+                CGPoint cg_pos;
+                if (AXValueGetValue(_size, kAXValueTypeCGSize, &cg_size) &&
+                    AXValueGetValue(_pos, kAXValueTypeCGPoint, &cg_pos)) {
+                    NSScreen * main_screen = NSScreen.screens[0];
+                    NSRect visible = NSIntersectionRect(
+                        NSMakeRect(
+                            NSMinX(screen.frame) - NSMinX(main_screen.frame),
+                            NSMaxY(main_screen.frame) - NSMaxY(screen.frame),
+                            NSWidth(screen.frame),
+                            NSHeight(screen.frame)),
+                        NSMakeRect(cg_pos.x, cg_pos.y, cg_size.width, cg_size.height));
+                    offscreen = NSWidth(visible) < MIN_VISIBLE || NSHeight(visible) < MIN_VISIBLE;
+                }
+                CFRelease(_pos);
+            }
+            CFRelease(_size);
+        }
+    }
+
+    if (verbose && offscreen) { NSLog(@"Offscreen window"); }
+    return offscreen;
+}
+
 inline bool is_desktop_window(AXUIElementRef _window) {
     bool desktop_window = false;
     AXValueRef _pos = NULL;
@@ -1166,6 +1205,10 @@ void onTick() {
 #endif
                 }
                 CFRelease(_mouseWindowApp);
+                if (needs_raise && mostly_offscreen(_mouseWindow, mousePoint)) {
+                    needs_raise = false;
+                    if (verbose) { NSLog(@"Excluding offscreen window"); }
+                }
                 CGWindowID focusedWindow_id;
 #ifdef FOCUS_FIRST
                 ProcessSerialNumber mouseWindow_psn;

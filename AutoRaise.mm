@@ -473,6 +473,17 @@ AXUIElementRef get_mousewindow(CGPoint point) {
     } else if (error == kAXErrorFailure) {
         // no fallback, happens when hovering over the menubar itself
         if (verbose) { NSLog(@"Copy element: failure"); }
+    } else if (error == kAXErrorAPIDisabled) {
+        // No fallback, and reported even when not verbose: every accessibility call
+        // fails from here on, so AutoRaise does nothing at all. Rebuilding changes the
+        // ad hoc signature, which can leave a stale Accessibility entry behind.
+        static bool reported = false;
+        if (!reported) {
+            reported = true;
+            NSLog(@"Accessibility permission is not working, AutoRaise can not do anything. "
+                "If you rebuilt AutoRaise, remove it under System Settings > Privacy & "
+                "Security > Accessibility and add it again.");
+        }
     } else if (verbose) {
         NSLog(@"Copy element: AXError %d", error);
     }

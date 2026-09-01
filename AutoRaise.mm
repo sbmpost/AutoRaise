@@ -141,6 +141,16 @@ static CGPoint oldPoint = {0, 0};
 static bool propagateMouseMoved = false;
 static bool requireMouseStop = true;
 static bool requireMultipleScreens = false;
+// Toggled from the menu bar icon (left click); pauses raise/focus without
+// quitting the app. Not persisted -- AutoRaise always starts up enabled.
+static bool autoRaiseEnabled = true;
+// Kept in sync by StatusMenuController's periodic AXIsProcessTrusted() check.
+// A rebuilt/re-signed AutoRaise.app can leave a *stale* Accessibility entry
+// behind (same app in System Settings, but the grant no longer matches the
+// new binary) -- macOS then fails every AX call instead of denying the
+// permission outright, so onTick() must check this every time rather than
+// trust a one-off startup check.
+static bool accessibilityTrusted = true;
 static bool ignoreSpaceChanged = false;
 static bool invertDisableKey = false;
 static bool invertIgnoreApps = false;
@@ -977,6 +987,8 @@ void AXCallback(AXObserverRef observer, AXUIElementRef _element, CFStringRef not
 }
 
 void onTick() {
+    if (!autoRaiseEnabled) { return; }
+    if (!accessibilityTrusted) { return; }
     if (requireMultipleScreens && NSScreen.screens.count < 2) { return; }
 
     // determine if mouseMoved
@@ -1311,6 +1323,415 @@ CGEventRef eventTapHandler(CGEventTapProxy proxy, CGEventType type, CGEventRef e
     return event;
 }
 
+//-------------------------------------------------menu bar UI-----------------------------------------------
+
+NSString * boolString(bool value) { return value ? @"true" : @"false"; }
+
+// Persists the currently active (in-memory) settings to ~/.AutoRaise so
+// they survive a restart. Mirrors the format documented in the README.
+void writeConfigFile() {
+    NSString * disableKeyStr = @"disabled";
+    if (disableKey == kCGEventFlagMaskControl) { disableKeyStr = @"control"; }
+    else if (disableKey == kCGEventFlagMaskAlternate) { disableKeyStr = @"option"; }
+
+    // ignoreApps always carries AssistiveControl, added automatically at
+    // startup. Strip it back out so it isn't written back to the user's file.
+    NSArray * savedIgnoreApps = [ignoreApps filteredArrayUsingPredicate:
+        [NSPredicate predicateWithFormat: @"SELF != %@", AssistiveControl]];
+
+    NSMutableString * content = [NSMutableString stringWithString: @"#AutoRaise config file\n"];
+    [content appendFormat: @"pollMillis=%d\n", pollMillis];
+    [content appendFormat: @"delay=%d\n", delayCount];
+    // Omitted (not just blank) when off -- their mere presence in this file is
+    // what re-enables warp on the next launch (see validateParameters).
+    if (warpMouse) {
+        [content appendFormat: @"warpX=%.2f\n", warpX];
+        [content appendFormat: @"warpY=%.2f\n", warpY];
+    }
+    [content appendFormat: @"scale=%.2f\n", cursorScale];
+    [content appendFormat: @"altTaskSwitcher=%@\n", boolString(altTaskSwitcher)];
+    [content appendFormat: @"requireMouseStop=%@\n", boolString(requireMouseStop)];
+    [content appendFormat: @"requireMultipleScreens=%@\n", boolString(requireMultipleScreens)];
+    [content appendFormat: @"ignoreSpaceChanged=%@\n", boolString(ignoreSpaceChanged)];
+    [content appendFormat: @"invertDisableKey=%@\n", boolString(invertDisableKey)];
+    [content appendFormat: @"invertIgnoreApps=%@\n", boolString(invertIgnoreApps)];
+    [content appendFormat: @"ignoreApps=\"%@\"\n", [savedIgnoreApps componentsJoinedByString: @","]];
+    [content appendFormat: @"ignoreTitles=\"%@\"\n", [ignoreTitles componentsJoinedByString: @","]];
+    [content appendFormat: @"stayFocusedBundleIds=\"%@\"\n", [stayFocusedBundleIds componentsJoinedByString: @","]];
+    [content appendFormat: @"disableKey=\"%@\"\n", disableKeyStr];
+    [content appendFormat: @"mouseDelta=%.2f\n", mouseDelta];
+    [content appendFormat: @"verbose=%@\n", boolString(verbose)];
+
+    NSString * path = [NSHomeDirectory() stringByAppendingPathComponent: @".AutoRaise"];
+    [content writeToFile: path atomically: YES encoding: NSUTF8StringEncoding error: NULL];
+}
+
+// Re-applies the same comma separated list parsing used at startup
+// (see ConfigClass/main), so edits from the preferences window take
+// effect immediately without a restart.
+void applyListSettings(NSString * ignoreAppsStr, NSString * ignoreTitlesStr, NSString * stayFocusedStr) {
+    NSMutableArray * ignoreA = ignoreAppsStr.length ?
+        [[NSMutableArray alloc] initWithArray: [ignoreAppsStr componentsSeparatedByString: @","]] :
+        [[NSMutableArray alloc] init];
+    [ignoreA addObject: AssistiveControl];
+    ignoreApps = [ignoreA copy];
+    ignoreTitles = ignoreTitlesStr.length ? [ignoreTitlesStr componentsSeparatedByString: @","] : @[];
+    stayFocusedBundleIds = stayFocusedStr.length ? [stayFocusedStr componentsSeparatedByString: @","] : @[];
+}
+
+@interface StatusMenuController : NSObject <NSTextFieldDelegate>
+@property (strong) NSStatusItem * statusItem;
+@property (strong) NSWindow * prefsWindow;
+@property (strong) NSButton * requireMouseStopCheckbox;
+@property (strong) NSButton * requireMultipleScreensCheckbox;
+@property (strong) NSButton * ignoreSpaceChangedCheckbox;
+@property (strong) NSButton * invertDisableKeyCheckbox;
+@property (strong) NSButton * invertIgnoreAppsCheckbox;
+@property (strong) NSButton * altTaskSwitcherCheckbox;
+@property (strong) NSButton * verboseCheckbox;
+@property (strong) NSTextField * pollMillisField;
+@property (strong) NSTextField * delayField;
+@property (strong) NSTextField * warpXField;
+@property (strong) NSTextField * warpYField;
+@property (strong) NSTextField * scaleField;
+@property (strong) NSTextField * mouseDeltaField;
+@property (strong) NSPopUpButton * disableKeyPopup;
+@property (strong) NSTextField * ignoreAppsField;
+@property (strong) NSTextField * ignoreTitlesField;
+@property (strong) NSTextField * stayFocusedField;
+- (void) buildStatusItem;
+@end
+
+@implementation StatusMenuController
+
+- (void) buildStatusItem {
+    self.statusItem = [[NSStatusBar systemStatusBar] statusItemWithLength: NSVariableStatusItemLength];
+    self.statusItem.button.target = self;
+    self.statusItem.button.action = @selector(statusItemClicked:);
+    [self.statusItem.button sendActionOn: (NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp)];
+    [self updateStatusIcon];
+    [NSTimer scheduledTimerWithTimeInterval: 2.0 target: self
+        selector: @selector(checkAccessibilityTrust) userInfo: NULL repeats: YES];
+}
+
+// Catches both directions: permission revoked while running, and permission
+// granted after the user fixes it in System Settings -- no relaunch needed
+// either way. This is the only reliable signal (querying TCC.db directly
+// needs Full Disk Access and isn't something a normal app can rely on).
+- (void) checkAccessibilityTrust {
+    bool trusted = AXIsProcessTrusted();
+    if (trusted == accessibilityTrusted) { return; }
+    accessibilityTrusted = trusted;
+    NSLog(@"AutoRaise: Accessibility permission %@ -- %@", trusted ? @"granted" : @"NOT granted",
+        trusted ? @"raise/focus resumed"
+                : @"raise/focus paused. If this app was just rebuilt/replaced, its System Settings "
+                   "entry may be stale: remove it from Privacy & Security > Accessibility and add it back.");
+    [self updateStatusIcon];
+}
+
+// Left click: toggle AutoRaise on/off, same as the original balloon icon
+// (filled = enabled, outline = disabled). Right click: preferences. While the
+// warning icon is showing, left click re-requests Accessibility instead --
+// toggling enabled/disabled would be a no-op (onTick() already bails without
+// the permission) and would leave the click looking like it did nothing.
+- (void) statusItemClicked: (id) sender {
+    if ([NSApp currentEvent].type == NSEventTypeRightMouseUp) {
+        [self showMenu];
+    } else if (!accessibilityTrusted) {
+        [self requestAccessibility: sender];
+    } else {
+        autoRaiseEnabled = !autoRaiseEnabled;
+        [self updateStatusIcon];
+        if (verbose) { NSLog(@"AutoRaise %@ via menu bar icon", autoRaiseEnabled ? @"enabled" : @"disabled"); }
+    }
+}
+
+// Same pair of system symbols the original balloon icon used: filled while
+// enabled, outline while disabled. Template images, so they render correctly
+// in both light and dark menu bars without any extra handling here.
+- (void) updateStatusIcon {
+    NSString * symbolName = @"balloon.2.fill";
+    NSString * description = @"AutoRaise enabled";
+    if (!accessibilityTrusted) {
+        symbolName = @"exclamationmark.triangle.fill";
+        description = @"AutoRaise: Accessibility permission needed";
+    } else if (!autoRaiseEnabled) {
+        symbolName = @"balloon.2";
+        description = @"AutoRaise disabled";
+    }
+    self.statusItem.button.image = [NSImage imageWithSystemSymbolName: symbolName accessibilityDescription: description];
+}
+
+- (void) showMenu {
+    NSMenu * menu = [[NSMenu alloc] init];
+    NSMenuItem * title = [[NSMenuItem alloc] initWithTitle:
+        [NSString stringWithFormat: @"AutoRaise v%s", AUTORAISE_VERSION] action: NULL keyEquivalent: @""];
+    title.enabled = NO;
+    [menu addItem: title];
+    [menu addItem: [NSMenuItem separatorItem]];
+    NSMenuItem * prefs = [[NSMenuItem alloc] initWithTitle: @"Preferences…" action: @selector(openPreferences:) keyEquivalent: @""];
+    prefs.target = self;
+    [menu addItem: prefs];
+    NSMenuItem * reveal = [[NSMenuItem alloc] initWithTitle: @"Reveal Config File in Finder" action: @selector(revealConfigFile:) keyEquivalent: @""];
+    reveal.target = self;
+    [menu addItem: reveal];
+    NSMenuItem * grantAccess = [[NSMenuItem alloc] initWithTitle: @"Grant Accessibility Permission" action: @selector(requestAccessibility:) keyEquivalent: @""];
+    grantAccess.target = self;
+    [menu addItem: grantAccess];
+    [menu addItem: [NSMenuItem separatorItem]];
+    NSMenuItem * quit = [[NSMenuItem alloc] initWithTitle: @"Quit AutoRaise" action: @selector(terminate:) keyEquivalent: @"q"];
+    quit.target = NSApp;
+    [menu addItem: quit];
+
+    // NSStatusItem shows its menu on any click once one is assigned -- the
+    // menu is only attached right before showing it, then detached again,
+    // so the button's own action/target keep working the rest of the time.
+    self.statusItem.menu = menu;
+    [self.statusItem.button performClick: nil];
+    self.statusItem.menu = NULL;
+}
+
+- (void) revealConfigFile: (id) sender {
+    NSString * path = [NSHomeDirectory() stringByAppendingPathComponent: @".AutoRaise"];
+    [[NSWorkspace sharedWorkspace] selectFile: path inFileViewerRootedAtPath: @""];
+}
+
+- (void) requestAccessibility: (id) sender {
+    NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
+    accessibilityTrusted = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);
+    [self updateStatusIcon];
+}
+
+- (NSView *) labeledRow: (NSString *) label control: (NSView *) control {
+    NSTextField * labelField = [NSTextField labelWithString: label];
+    labelField.alignment = NSTextAlignmentRight;
+    [labelField.widthAnchor constraintEqualToConstant: 130].active = YES;
+    [control.widthAnchor constraintEqualToConstant: 150].active = YES;
+    NSStackView * row = [NSStackView stackViewWithViews: @[labelField, control]];
+    row.spacing = 8;
+    return row;
+}
+
+// A checkbox with a short explanation underneath it, so every toggle is
+// self-documenting instead of relying on a separate reference.
+- (NSView *) checkboxRow: (NSButton *) checkbox description: (NSString *) description {
+    NSTextField * descriptionField = [NSTextField wrappingLabelWithString: description];
+    descriptionField.textColor = [NSColor secondaryLabelColor];
+    descriptionField.font = [NSFont systemFontOfSize: [NSFont smallSystemFontSize]];
+    // Without this, the label's wrapped height isn't known until a display
+    // pass happens, so the stack measures it too short and later rows overlap.
+    descriptionField.preferredMaxLayoutWidth = 260;
+    [descriptionField.widthAnchor constraintEqualToConstant: 260].active = YES;
+    NSStackView * row = [NSStackView stackViewWithViews: @[checkbox, descriptionField]];
+    row.orientation = NSUserInterfaceLayoutOrientationVertical;
+    row.alignment = NSLayoutAttributeLeading;
+    row.spacing = 2;
+    return row;
+}
+
+- (NSView *) aboutBox {
+    NSTextField * line1 = [NSTextField wrappingLabelWithString:
+        [NSString stringWithFormat: @"AutoRaise v%s — Copyright © 2026 sbmpost", AUTORAISE_VERSION]];
+    NSTextField * line2 = [NSTextField wrappingLabelWithString: @"Licensed under the GNU General Public License v3.0."];
+    NSTextField * line3 = [NSTextField wrappingLabelWithString:
+        @"The Require Multiple Screens option and this Preferences window are a small contribution "
+         "by jcexposito, built with Claude Code (Sonnet 5)."];
+    for (NSTextField * line in @[line1, line2, line3]) {
+        line.textColor = [NSColor secondaryLabelColor];
+        line.font = [NSFont systemFontOfSize: [NSFont smallSystemFontSize]];
+        line.preferredMaxLayoutWidth = 520;
+        [line.widthAnchor constraintEqualToConstant: 520].active = YES;
+    }
+    // Plain stack, not an NSBox -- NSBox.contentView doesn't participate in
+    // Auto Layout sizing (it's a frame-based API), so it reported a fitting
+    // size of 0x0 and the stack above it ended up overlapping this text.
+    NSStackView * lines = [NSStackView stackViewWithViews: @[line1, line2, line3]];
+    lines.orientation = NSUserInterfaceLayoutOrientationVertical;
+    lines.alignment = NSLayoutAttributeLeading;
+    lines.spacing = 2;
+    return lines;
+}
+
+- (void) openPreferences: (id) sender {
+    if (!self.prefsWindow) {
+        // Every control below applies (and saves) immediately on change --
+        // there is no separate Done/Save step.
+        self.requireMouseStopCheckbox = [NSButton checkboxWithTitle: @"Require Mouse Stop" target: self action: @selector(applyPreferences:)];
+        self.requireMouseStopCheckbox.state = requireMouseStop ? NSControlStateValueOn : NSControlStateValueOff;
+        self.requireMultipleScreensCheckbox = [NSButton checkboxWithTitle: @"Require Multiple Screens" target: self action: @selector(applyPreferences:)];
+        self.requireMultipleScreensCheckbox.state = requireMultipleScreens ? NSControlStateValueOn : NSControlStateValueOff;
+        self.ignoreSpaceChangedCheckbox = [NSButton checkboxWithTitle: @"Ignore Space Changed" target: self action: @selector(applyPreferences:)];
+        self.ignoreSpaceChangedCheckbox.state = ignoreSpaceChanged ? NSControlStateValueOn : NSControlStateValueOff;
+        self.invertDisableKeyCheckbox = [NSButton checkboxWithTitle: @"Invert Disable Key" target: self action: @selector(applyPreferences:)];
+        self.invertDisableKeyCheckbox.state = invertDisableKey ? NSControlStateValueOn : NSControlStateValueOff;
+        self.invertIgnoreAppsCheckbox = [NSButton checkboxWithTitle: @"Invert Ignore Apps" target: self action: @selector(applyPreferences:)];
+        self.invertIgnoreAppsCheckbox.state = invertIgnoreApps ? NSControlStateValueOn : NSControlStateValueOff;
+        self.altTaskSwitcherCheckbox = [NSButton checkboxWithTitle: @"Alt Task Switcher" target: self action: @selector(applyPreferences:)];
+        self.altTaskSwitcherCheckbox.state = altTaskSwitcher ? NSControlStateValueOn : NSControlStateValueOff;
+        self.verboseCheckbox = [NSButton checkboxWithTitle: @"Verbose Logging" target: self action: @selector(applyPreferences:)];
+        self.verboseCheckbox.state = verbose ? NSControlStateValueOn : NSControlStateValueOff;
+
+        self.pollMillisField = [NSTextField textFieldWithString: [NSString stringWithFormat: @"%d", pollMillis]];
+        self.delayField = [NSTextField textFieldWithString: [NSString stringWithFormat: @"%d", delayCount]];
+        // Left blank when warp is currently off, instead of showing a stale/default
+        // 0.00 -- otherwise touching any other field would turn it on.
+        self.warpXField = [NSTextField textFieldWithString: warpMouse ? [NSString stringWithFormat: @"%.2f", warpX] : @""];
+        self.warpYField = [NSTextField textFieldWithString: warpMouse ? [NSString stringWithFormat: @"%.2f", warpY] : @""];
+        self.scaleField = [NSTextField textFieldWithString: [NSString stringWithFormat: @"%.2f", cursorScale]];
+        self.mouseDeltaField = [NSTextField textFieldWithString: [NSString stringWithFormat: @"%.2f", mouseDelta]];
+        NSArray * userIgnoreApps = [ignoreApps filteredArrayUsingPredicate:
+            [NSPredicate predicateWithFormat: @"SELF != %@", AssistiveControl]];
+        self.ignoreAppsField = [NSTextField textFieldWithString: [userIgnoreApps componentsJoinedByString: @","]];
+        self.ignoreTitlesField = [NSTextField textFieldWithString: [ignoreTitles componentsJoinedByString: @","]];
+        self.stayFocusedField = [NSTextField textFieldWithString: [stayFocusedBundleIds componentsJoinedByString: @","]];
+        for (NSTextField * field in @[self.pollMillisField, self.delayField, self.warpXField, self.warpYField,
+            self.scaleField, self.mouseDeltaField, self.ignoreAppsField, self.ignoreTitlesField, self.stayFocusedField]) {
+            field.delegate = self;
+        }
+
+        self.disableKeyPopup = [[NSPopUpButton alloc] init];
+        [self.disableKeyPopup addItemsWithTitles: @[@"control", @"option", @"disabled"]];
+        NSString * currentDisableKey = @"disabled";
+        if (disableKey == kCGEventFlagMaskControl) { currentDisableKey = @"control"; }
+        else if (disableKey == kCGEventFlagMaskAlternate) { currentDisableKey = @"option"; }
+        [self.disableKeyPopup selectItemWithTitle: currentDisableKey];
+        self.disableKeyPopup.target = self;
+        self.disableKeyPopup.action = @selector(applyPreferences:);
+
+        CGFloat contentWidth = 600;
+        NSBox * separator = [[NSBox alloc] init];
+        separator.boxType = NSBoxSeparator;
+        [separator.widthAnchor constraintEqualToConstant: contentWidth - 40].active = YES;
+
+        // Left column: checkboxes. Right column: numeric/text fields.
+        // Side by side instead of one long list, so the window fits without scrolling.
+        NSStackView * checkboxColumn = [NSStackView stackViewWithViews: @[
+            [self checkboxRow: self.requireMouseStopCheckbox
+                description: @"Require the mouse to stop moving before raising or focusing a window."],
+            [self checkboxRow: self.requireMultipleScreensCheckbox
+                description: @"Only raise/focus on hover when 2 or more screens are currently active."],
+            [self checkboxRow: self.ignoreSpaceChangedCheckbox
+                description: @"Do not immediately raise/focus right after switching Spaces."],
+            [self checkboxRow: self.invertDisableKeyCheckbox
+                description: @"Reverses the disable key below: hold it to enable AutoRaise instead of disabling it."],
+            [self checkboxRow: self.invertIgnoreAppsCheckbox
+                description: @"Turns Ignore Apps below into an Include Apps list instead."],
+            [self checkboxRow: self.altTaskSwitcherCheckbox
+                description: @"Enable if you use a 3rd-party app switcher instead of the standard Cmd-Tab."],
+            [self checkboxRow: self.verboseCheckbox
+                description: @"Log raise/focus events, useful for troubleshooting (see Console.app)."]
+        ]];
+        checkboxColumn.orientation = NSUserInterfaceLayoutOrientationVertical;
+        checkboxColumn.alignment = NSLayoutAttributeLeading;
+        checkboxColumn.spacing = 10;
+
+        NSStackView * fieldColumn = [NSStackView stackViewWithViews: @[
+            [self labeledRow: @"Poll Millis" control: self.pollMillisField],
+            [self labeledRow: @"Delay" control: self.delayField],
+            [self labeledRow: @"Warp X" control: self.warpXField],
+            [self labeledRow: @"Warp Y" control: self.warpYField],
+            [self labeledRow: @"Scale" control: self.scaleField],
+            [self labeledRow: @"Mouse Delta" control: self.mouseDeltaField],
+            [self labeledRow: @"Disable Key" control: self.disableKeyPopup],
+            [self labeledRow: @"Ignore Apps" control: self.ignoreAppsField],
+            [self labeledRow: @"Ignore Titles" control: self.ignoreTitlesField],
+            [self labeledRow: @"Stay Focused Bundle Ids" control: self.stayFocusedField]
+        ]];
+        fieldColumn.orientation = NSUserInterfaceLayoutOrientationVertical;
+        fieldColumn.alignment = NSLayoutAttributeLeading;
+        fieldColumn.spacing = 10;
+
+        NSStackView * columns = [NSStackView stackViewWithViews: @[checkboxColumn, fieldColumn]];
+        columns.alignment = NSLayoutAttributeTop;
+        columns.spacing = 24;
+
+        NSStackView * stack = [NSStackView stackViewWithViews: @[columns, separator, [self aboutBox]]];
+        stack.orientation = NSUserInterfaceLayoutOrientationVertical;
+        stack.alignment = NSLayoutAttributeLeading;
+        stack.spacing = 10;
+        stack.edgeInsets = NSEdgeInsetsMake(16, 20, 16, 20);
+        stack.translatesAutoresizingMaskIntoConstraints = NO;
+
+        [stack.widthAnchor constraintEqualToConstant: contentWidth].active = YES;
+        CGFloat margin = 40;
+        CGFloat windowWidth = contentWidth + margin;
+        CGFloat maxHeight = NSScreen.mainScreen.visibleFrame.size.height - 60;
+
+        // Center the (fixed-width) stack in the (wider) container so the extra
+        // margin becomes even padding on both sides, instead of the stack just
+        // sitting flush left.
+        NSView * container = [[NSView alloc] initWithFrame: NSMakeRect(0, 0, windowWidth, maxHeight)];
+        [container addSubview: stack];
+        [stack.centerXAnchor constraintEqualToAnchor: container.centerXAnchor].active = YES;
+        [stack.topAnchor constraintEqualToAnchor: container.topAnchor].active = YES;
+
+        NSScrollView * scrollView = [[NSScrollView alloc] init];
+        scrollView.hasVerticalScroller = YES;
+        scrollView.documentView = container;
+
+        NSWindow * window = [[NSWindow alloc] initWithContentRect: NSMakeRect(0, 0, windowWidth, maxHeight)
+            styleMask: (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable)
+            backing: NSBackingStoreBuffered defer: NO];
+        window.title = @"AutoRaise Preferences";
+        window.releasedWhenClosed = NO;
+        window.contentView = scrollView;
+
+        // Only now, with the stack actually inside a window, does a layout pass
+        // correctly resolve the wrapped label heights -- fittingSize before this
+        // point measures them too short (single line), which is what caused the
+        // overlap with the box below. Measure again after laying out for real,
+        // then size the window to that.
+        [stack layoutSubtreeIfNeeded];
+        CGFloat windowHeight = MIN(stack.fittingSize.height + margin, maxHeight);
+        container.frame = NSMakeRect(0, 0, windowWidth, windowHeight);
+        [window setContentSize: NSMakeSize(windowWidth, windowHeight)];
+        self.prefsWindow = window;
+    }
+    [self.prefsWindow center];
+    [self.prefsWindow makeKeyAndOrderFront: nil];
+    [NSApp activateIgnoringOtherApps: YES];
+}
+
+- (void) applyPreferences: (id) sender {
+    requireMouseStop = self.requireMouseStopCheckbox.state == NSControlStateValueOn;
+    requireMultipleScreens = self.requireMultipleScreensCheckbox.state == NSControlStateValueOn;
+    ignoreSpaceChanged = self.ignoreSpaceChangedCheckbox.state == NSControlStateValueOn;
+    invertDisableKey = self.invertDisableKeyCheckbox.state == NSControlStateValueOn;
+    invertIgnoreApps = self.invertIgnoreAppsCheckbox.state == NSControlStateValueOn;
+    altTaskSwitcher = self.altTaskSwitcherCheckbox.state == NSControlStateValueOn;
+    verbose = self.verboseCheckbox.state == NSControlStateValueOn;
+
+    pollMillis = MAX(20, [self.pollMillisField.stringValue intValue]);
+    delayCount = [self.delayField.stringValue intValue];
+    warpX = [self.warpXField.stringValue floatValue];
+    warpY = [self.warpYField.stringValue floatValue];
+    cursorScale = MAX(1, [self.scaleField.stringValue floatValue]);
+    mouseDelta = MAX(0, [self.mouseDeltaField.stringValue floatValue]);
+    // Both fields must be filled in -- blank means "leave warp off", same as
+    // omitting -warpX/-warpY on the command line.
+    warpMouse = self.warpXField.stringValue.length && self.warpYField.stringValue.length &&
+        warpX >= 0 && warpX <= 1 && warpY >= 0 && warpY <= 1;
+
+    NSString * selectedKey = self.disableKeyPopup.selectedItem.title;
+    if ([selectedKey isEqualToString: @"control"]) { disableKey = kCGEventFlagMaskControl; }
+    else if ([selectedKey isEqualToString: @"option"]) { disableKey = kCGEventFlagMaskAlternate; }
+    else { disableKey = 0; }
+
+    applyListSettings(self.ignoreAppsField.stringValue, self.ignoreTitlesField.stringValue, self.stayFocusedField.stringValue);
+
+    writeConfigFile();
+}
+
+// Fires on every keystroke in any of the text fields above, so typing
+// applies (and saves) the same way toggling a checkbox does.
+- (void) controlTextDidChange: (NSNotification *) notification {
+    [self applyPreferences: notification.object];
+}
+
+@end
+
+static StatusMenuController * statusMenuController = NULL;
+
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
         ConfigClass * config = [[ConfigClass alloc] init];
@@ -1440,8 +1861,11 @@ int main(int argc, const char * argv[]) {
         printf("\n");
 
         NSDictionary * options = @{(id) CFBridgingRelease(kAXTrustedCheckOptionPrompt): @YES};
-        bool trusted = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);
-        if (verbose) { NSLog(@"AXIsProcessTrusted: %s", trusted ? "YES" : "NO"); }
+        accessibilityTrusted = AXIsProcessTrustedWithOptions((__bridge CFDictionaryRef) options);
+        if (!accessibilityTrusted) {
+            NSLog(@"AutoRaise: Accessibility permission NOT granted -- raise/focus paused until it is "
+                   "granted in System Settings > Privacy & Security > Accessibility.");
+        }
 
         CGSGetCursorScale(CGSMainConnectionID(), &oldScale);
         if (verbose) { NSLog(@"System cursor scale: %f", oldScale); }
@@ -1476,6 +1900,27 @@ int main(int argc, const char * argv[]) {
 
         findDockApplication();
         findDesktopOrigin();
+
+        statusMenuController = [[StatusMenuController alloc] init];
+        [statusMenuController buildStatusItem];
+
+        // AutoRaise has no Dock icon or menu bar, so Cmd-Q/Cmd-W otherwise go
+        // nowhere -- this menu is never shown, it only registers those two
+        // standard key equivalents: Cmd-Q quits, Cmd-W closes the key window
+        // (in practice, just the Preferences window).
+        NSMenu * mainMenu = [[NSMenu alloc] init];
+        NSMenuItem * appMenuItem = [[NSMenuItem alloc] init];
+        [mainMenu addItem: appMenuItem];
+        NSMenu * appMenu = [[NSMenu alloc] init];
+        [appMenu addItemWithTitle: @"Quit AutoRaise" action: @selector(terminate:) keyEquivalent: @"q"];
+        appMenuItem.submenu = appMenu;
+        NSMenuItem * windowMenuItem = [[NSMenuItem alloc] init];
+        [mainMenu addItem: windowMenuItem];
+        NSMenu * windowMenu = [[NSMenu alloc] init];
+        [windowMenu addItemWithTitle: @"Close" action: @selector(performClose:) keyEquivalent: @"w"];
+        windowMenuItem.submenu = windowMenu;
+        [NSApplication sharedApplication].mainMenu = mainMenu;
+
         [[NSApplication sharedApplication] run];
     }
     return 0;

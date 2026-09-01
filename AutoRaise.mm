@@ -666,8 +666,10 @@ inline bool is_main_window(AXUIElementRef _app, AXUIElementRef _window, bool chr
 inline bool is_pwa(NSString * bundleIdentifier) {
     NSArray * components = [bundleIdentifier componentsSeparatedByString: @"."];
     bool pake = components.count == 3 && [components[1] isEqual: Pake];
-    bool pwa = pake || (components.count > 4 &&
-        [pwas containsObject: components[2]] && [components[3] isEqual: @"app"]);
+    // browser channels (canary, beta, dev) insert one component before "app"
+    bool pwa = pake || (components.count > 4 && [pwas containsObject: components[2]] &&
+        ([components[3] isEqual: @"app"] ||
+        (components.count > 5 && [components[4] isEqual: @"app"])));
     if (verbose && pwa) { NSLog(@"PWA: %@", components[2]); }
     return pwa;
 }

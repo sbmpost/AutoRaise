@@ -149,6 +149,7 @@ static bool spaceHasChanged = false;
 static bool appWasActivated = false;
 static bool altTaskSwitcher = false;
 static bool warpMouse = false;
+static bool warpOnlyAcrossScreens = false;
 static bool verbose = false;
 static float warpX = 0.5;
 static float warpY = 0.5;
@@ -828,6 +829,7 @@ const NSString *kAltTaskSwitcher = @"altTaskSwitcher";
 const NSString *kRequireMouseStop = @"requireMouseStop";
 const NSString *kRequireMultipleScreens = @"requireMultipleScreens";
 const NSString *kRequireScreenChange = @"requireScreenChange";
+const NSString *kWarpOnlyAcrossScreens = @"warpOnlyAcrossScreens";
 const NSString *kIgnoreSpaceChanged = @"ignoreSpaceChanged";
 const NSString *kStayFocusedBundleIds = @"stayFocusedBundleIds";
 const NSString *kInvertDisableKey = @"invertDisableKey";
@@ -839,13 +841,13 @@ const NSString *kPollMillis = @"pollMillis";
 const NSString *kDisableKey = @"disableKey";
 #ifdef FOCUS_FIRST
 const NSString *kFocusDelay = @"focusDelay";
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher,
-    kFocusDelay, kRequireMouseStop, kRequireMultipleScreens, kRequireScreenChange,
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kWarpOnlyAcrossScreens,
+    kVerbose, kAltTaskSwitcher, kFocusDelay, kRequireMouseStop, kRequireMultipleScreens, kRequireScreenChange,
     kIgnoreSpaceChanged, kInvertDisableKey, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles,
     kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
 #else
-NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kVerbose, kAltTaskSwitcher,
-    kRequireMouseStop, kRequireMultipleScreens, kRequireScreenChange, kIgnoreSpaceChanged,
+NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kWarpOnlyAcrossScreens,
+    kVerbose, kAltTaskSwitcher, kRequireMouseStop, kRequireMultipleScreens, kRequireScreenChange, kIgnoreSpaceChanged,
     kInvertDisableKey, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles, kStayFocusedBundleIds,
     kDisableKey, kMouseDelta, kPollMillis];
 #endif
@@ -1020,8 +1022,21 @@ bool appActivated() {
     }
 
     if (_activatedWindow) {
-        if (verbose) { NSLog(@"Warp mouse"); }
-        CGWarpMouseCursorPosition(get_mousepoint(_activatedWindow));
+        CGPoint warpPoint = get_mousepoint(_activatedWindow);
+        bool sameScreen = false;
+        if (warpOnlyAcrossScreens) {
+            CGEventRef _event = CGEventCreate(NULL);
+            CGPoint mousePoint = CGEventGetLocation(_event);
+            if (_event) { CFRelease(_event); }
+            sameScreen = findScreen(mousePoint) == findScreen(warpPoint);
+        }
+
+        if (sameScreen) {
+            if (verbose) { NSLog(@"Not warping within the same screen"); }
+        } else {
+            if (verbose) { NSLog(@"Warp mouse"); }
+            CGWarpMouseCursorPosition(warpPoint);
+        }
         if (!finder_app) { CFRelease(_activatedWindow); }
     }
 
@@ -1399,6 +1414,7 @@ int main(int argc, const char * argv[]) {
         requireMouseStop   = [parameters[kRequireMouseStop] boolValue];
         requireMultipleScreens = [parameters[kRequireMultipleScreens] boolValue];
         requireScreenChange = [parameters[kRequireScreenChange] boolValue];
+        warpOnlyAcrossScreens = [parameters[kWarpOnlyAcrossScreens] boolValue];
         ignoreSpaceChanged = [parameters[kIgnoreSpaceChanged] boolValue];
         invertIgnoreApps   = [parameters[kInvertIgnoreApps] boolValue];
         invertDisableKey   = [parameters[kInvertDisableKey] boolValue];
@@ -1410,6 +1426,7 @@ int main(int argc, const char * argv[]) {
         printf("  -focusDelay <0=no-focus, 1=no-delay, 2=%dms, 3=%dms, ...>\n", pollMillis, pollMillis*2);
 #endif
         printf("  -warpX <0.5> -warpY <0.5> -scale <2.0>\n");
+        printf("  -warpOnlyAcrossScreens <true|false>\n");
         printf("  -altTaskSwitcher <true|false>\n");
         printf("  -requireMouseStop <true|false>\n");
         printf("  -requireMultipleScreens <true|false>\n");
@@ -1445,6 +1462,7 @@ int main(int argc, const char * argv[]) {
         if (warpMouse) {
             printf("  * warpX: %.1f, warpY: %.1f, scale: %.1f\n", warpX, warpY, cursorScale);
             printf("  * altTaskSwitcher: %s\n", altTaskSwitcher ? "true" : "false");
+            printf("  * warpOnlyAcrossScreens: %s\n", warpOnlyAcrossScreens ? "true" : "false");
         }
 
         printf("  * requireMouseStop: %s\n", requireMouseStop ? "true" : "false");

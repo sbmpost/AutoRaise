@@ -67,7 +67,7 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
 **Command line usage:**
 
-    ./AutoRaise -pollMillis 50 -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -altTaskSwitcher false -requireMouseStop false -requireMultipleScreens false -requireScreenChange false -ignoreSpaceChanged false -ignoreApps "App1,App2" -ignoreTitles "^window$" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
+    ./AutoRaise -pollMillis 50 -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -warpOnlyAcrossScreens false -altTaskSwitcher false -requireMouseStop false -requireMultipleScreens false -requireScreenChange false -ignoreSpaceChanged false -ignoreApps "App1,App2" -ignoreTitles "^window$" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
 
 *Note*: focusDelay is only supported when compiled with the "EXPERIMENTAL_FOCUS_FIRST" flag.
 
@@ -82,6 +82,9 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
   - warpY: A Factor between 0 and 1. Makes the mouse jump vertically to the activated window. By default disabled.
 
   - scale: Enlarge the mouse for a short period of time after warping it. The default is 2.0. To disable set it to 1.0.
+
+  - warpOnlyAcrossScreens: Only warp the mouse if the activated window is on a different screen than the mouse.
+    The default is false.
 
   - altTaskSwitcher: Set to true if you use 3rd party tools to switch between applications (other than standard command-tab).
 
@@ -121,6 +124,7 @@ AutoRaise can read these parameters from a configuration file. To make this happ
     warpX=0.5
     warpY=0.1
     scale=2.5
+    warpOnlyAcrossScreens=false
     altTaskSwitcher=false
     requireMouseStop=true
     requireMultipleScreens=false
@@ -186,6 +190,7 @@ The output should look something like this:
       -delay <0=no-raise, 1=no-delay, 2=50ms, 3=100ms, ...>
       -focusDelay <0=no-focus, 1=no-delay, 2=50ms, 3=100ms, ...>
       -warpX <0.5> -warpY <0.5> -scale <2.0>
+      -warpOnlyAcrossScreens <true|false>
       -altTaskSwitcher <true|false>
       -requireMouseStop <true|false>
       -requireMultipleScreens <true|false>

@@ -10,6 +10,9 @@ When you hover a window it will be raised to the front (with a delay of your cho
 the mouse to the center of the activated window when using the cmd-tab or cmd-grave (backtick) key combination.
 See also [on stackoverflow](https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x)
 
+AutoRaise works on windows. Panes drawn inside a single window, such as tmux or iTerm splits, are not windows as far as
+macOS is concerned and cannot be focused separately.
+
 **Quick start**
 
 1. Download the [latest release](https://github.com/sbmpost/AutoRaise/releases/latest)

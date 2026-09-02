@@ -604,7 +604,7 @@ inline NSScreen * findScreen(CGPoint point) {
     return NULL;
 }
 
-inline NSScreen * window_screen(AXUIElementRef _window) {
+inline NSScreen * findScreenByWindow(AXUIElementRef _window) {
     NSScreen * screen = NULL;
     AXValueRef _pos = NULL;
     AXUIElementCopyAttributeValue(_window, kAXPositionAttribute, (CFTypeRef *) &_pos);
@@ -622,7 +622,7 @@ inline NSScreen * window_screen(AXUIElementRef _window) {
 // switches workspace and parks the previous window in its place, which without
 // this check makes the two raise each other indefinitely.
 #define MIN_VISIBLE 4
-inline bool mostly_offscreen(AXUIElementRef _window, CGPoint point) {
+inline bool is_offscreen_window(AXUIElementRef _window, CGPoint point) {
     bool offscreen = false;
     NSScreen * screen = findScreen(point);
     if (screen) {
@@ -1039,7 +1039,7 @@ bool appActivated() {
             CGEventRef _event = CGEventCreate(NULL);
             CGPoint mousePoint = CGEventGetLocation(_event);
             if (_event) { CFRelease(_event); }
-            sameScreen = findScreen(mousePoint) == window_screen(_activatedWindow);
+            sameScreen = findScreen(mousePoint) == findScreenByWindow(_activatedWindow);
         }
 
         if (sameScreen) {
@@ -1266,7 +1266,7 @@ void onTick() {
 #endif
                 }
                 CFRelease(_mouseWindowApp);
-                if (needs_raise && mostly_offscreen(_mouseWindow, mousePoint)) {
+                if (needs_raise && is_offscreen_window(_mouseWindow, mousePoint)) {
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding offscreen window"); }
                 }
@@ -1290,7 +1290,7 @@ void onTick() {
                         _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
                         needs_raise = mouseWindow_id != focusedWindow_id;
                         if (needs_raise && requireScreenChange &&
-                            window_screen(_focusedWindow) == findScreen(mousePoint)) {
+                            findScreenByWindow(_focusedWindow) == findScreen(mousePoint)) {
                             needs_raise = false;
                             if (verbose) { NSLog(@"Excluding same screen"); }
                         }

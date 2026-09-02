@@ -993,6 +993,7 @@ bool appActivated() {
         }
     }
 
+    bool warped = false;
     if (_activatedWindow) {
         bool sameScreen = false;
         if (warpOnlyAcrossScreens) {
@@ -1007,11 +1008,13 @@ bool appActivated() {
         } else {
             if (verbose) { NSLog(@"Warp mouse"); }
             CGWarpMouseCursorPosition(get_mousepoint(_activatedWindow));
+            warped = true;
         }
         if (!finder_app) { CFRelease(_activatedWindow); }
     }
 
-    return true;
+    // the caller enlarges the cursor, which only makes sense where it landed
+    return warped;
 }
 
 void AXCallback(AXObserverRef observer, AXUIElementRef _element, CFStringRef notification, void * destroyedMouseWindow_id) {

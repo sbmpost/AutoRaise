@@ -589,14 +589,13 @@ void findDesktopOrigin() {
 }
 
 inline NSScreen * findScreen(CGPoint point) {
-    NSScreen * main_screen = NSScreen.screens[0];
-    point.y = NSMaxY(main_screen.frame) - point.y;
     for (NSScreen * screen in [NSScreen screens]) {
+        CGPoint origin = screen_origin(screen);
         NSRect screen_bounds = NSMakeRect(
-            screen.frame.origin.x,
-            screen.frame.origin.y,
-            NSWidth(screen.frame) + 1,
-            NSHeight(screen.frame) + 1
+            origin.x,
+            origin.y,
+            NSWidth(screen.frame),
+            NSHeight(screen.frame)
         );
         if (NSPointInRect(NSPointFromCGPoint(point), screen_bounds)) {
             return screen;

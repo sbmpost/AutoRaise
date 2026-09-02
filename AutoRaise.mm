@@ -595,9 +595,17 @@ inline NSScreen * findScreen(CGPoint point) {
     return NULL;
 }
 
+// Take the centre rather than the top left corner: a window straddling two screens
+// belongs to the one it is mostly on, not the one its corner happens to land in.
 inline NSScreen * findScreenByWindow(AXUIElementRef _window) {
     CGPoint cg_pos;
-    return windowPosition(_window, &cg_pos) ? findScreen(cg_pos) : NULL;
+    CGSize cg_size;
+    if (windowPosition(_window, &cg_pos) && windowSize(_window, &cg_size)) {
+        return findScreen(CGPointMake(cg_pos.x + cg_size.width / 2,
+                                      cg_pos.y + cg_size.height / 2));
+    }
+
+    return NULL;
 }
 
 // Tiling window managers park windows of inactive workspaces almost fully

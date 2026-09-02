@@ -1097,9 +1097,13 @@ void onTick() {
         if (mouseMoved) {
             NSScreen * screen = findScreen(mousePoint);
             if (verbose) {
-                static NSScreen * loggedScreen = NULL;
-                if (screen != loggedScreen) {
-                    loggedScreen = screen;
+                // a screen keeps its display id across a reconfiguration, its NSScreen
+                // does not necessarily keep its address
+                static CGDirectDisplayID loggedDisplay = kCGNullDirectDisplay;
+                CGDirectDisplayID display = screen ? [screen.deviceDescription[
+                    @"NSScreenNumber"] unsignedIntValue] : kCGNullDirectDisplay;
+                if (display != loggedDisplay) {
+                    loggedDisplay = display;
                     if (screen) {
                         CGPoint origin = screen_origin(screen);
                         NSLog(@"Mouse screen: %@, origin (%.0f, %.0f), mouse (%.1f, %.1f)",

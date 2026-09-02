@@ -993,7 +993,10 @@ bool appActivated() {
         }
     }
 
-    bool warped = false;
+    // The caller enlarges the cursor. That still happens when there was no window to
+    // warp to, so you can find the pointer after a switch that did not move it, but
+    // not when the warp was skipped on purpose: nothing moved and nothing is lost.
+    bool scaleCursor = true;
     if (_activatedWindow) {
         bool sameScreen = false;
         if (warpOnlyAcrossScreens) {
@@ -1005,16 +1008,15 @@ bool appActivated() {
 
         if (sameScreen) {
             if (verbose) { NSLog(@"Not warping within the same screen"); }
+            scaleCursor = false;
         } else {
             if (verbose) { NSLog(@"Warp mouse"); }
             CGWarpMouseCursorPosition(get_mousepoint(_activatedWindow));
-            warped = true;
         }
         if (!finder_app) { CFRelease(_activatedWindow); }
     }
 
-    // the caller enlarges the cursor, which only makes sense where it landed
-    return warped;
+    return scaleCursor;
 }
 
 void AXCallback(AXObserverRef observer, AXUIElementRef _element, CFStringRef notification, void * destroyedMouseWindow_id) {

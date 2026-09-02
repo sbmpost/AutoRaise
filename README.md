@@ -1,17 +1,18 @@
 **AutoRaise**
 
-## macOS GUI
-
-The official menu bar app, Preferences UI, app bundle, and login-item integration are maintained in the separate [AutoRaise-UI repository](https://github.com/sbmpost/AutoRaise-UI). Submit GUI issues and pull requests there.
-
-The [sbmpost/AutoRaise repository](https://github.com/sbmpost/AutoRaise) is the source of truth for the AutoRaise engine and command-line options. Submit engine issues and pull requests there.
-
 When you hover a window it will be raised to the front (with a delay of your choosing) and gets the focus. There is also an option to warp
 the mouse to the center of the activated window when using the cmd-tab or cmd-grave (backtick) key combination.
 See also [on stackoverflow](https://stackoverflow.com/questions/98310/focus-follows-mouse-plus-auto-raise-on-mac-os-x)
 
 AutoRaise works on windows. Panes drawn inside a single window, such as tmux or iTerm splits, are not windows as far as
 macOS is concerned and cannot be focused separately.
+
+**Two repositories**
+
+This one holds AutoRaise itself: the part that does the raising and focusing, and all the command line options. The menu bar
+app with its preferences window is a separate project, [AutoRaise-UI](https://github.com/sbmpost/AutoRaise-UI).
+
+So if your question is about the interface, that is the place to be. Anything about the raising and focusing belongs here.
 
 **Quick start**
 

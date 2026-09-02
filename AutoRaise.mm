@@ -570,13 +570,19 @@ void findDockApplication() {
     if (verbose && !_dock_app) { NSLog(@"Dock application isn't running"); }
 }
 
+// The accessibility API reports positions from the top left of the main screen with
+// y growing downward, NSScreen frames start at their own bottom left with y growing
+// upward. This is the top left corner of a screen in accessibility coordinates.
+inline CGPoint screen_origin(NSScreen * screen) {
+    return CGPointMake(NSMinX(screen.frame),
+        NSMaxY(NSScreen.screens[0].frame) - NSMaxY(screen.frame));
+}
+
 void findDesktopOrigin() {
-    NSScreen * main_screen = NSScreen.screens[0];
-    float mainScreenTop = NSMaxY(main_screen.frame);
     for (NSScreen * screen in [NSScreen screens]) {
-        float screenOriginY = mainScreenTop - NSMaxY(screen.frame);
-        if (screenOriginY < desktopOrigin.y) { desktopOrigin.y = screenOriginY; }
-        if (screen.frame.origin.x < desktopOrigin.x) { desktopOrigin.x = screen.frame.origin.x; }
+        CGPoint origin = screen_origin(screen);
+        if (origin.y < desktopOrigin.y) { desktopOrigin.y = origin.y; }
+        if (origin.x < desktopOrigin.x) { desktopOrigin.x = origin.x; }
     }
 
     if (verbose) { NSLog(@"Desktop origin (%f, %f)", desktopOrigin.x, desktopOrigin.y); }
@@ -631,13 +637,10 @@ inline bool mostly_offscreen(AXUIElementRef _window, CGPoint point) {
                 CGPoint cg_pos;
                 if (AXValueGetValue(_size, kAXValueTypeCGSize, &cg_size) &&
                     AXValueGetValue(_pos, kAXValueTypeCGPoint, &cg_pos)) {
-                    NSScreen * main_screen = NSScreen.screens[0];
+                    CGPoint origin = screen_origin(screen);
                     NSRect visible = NSIntersectionRect(
-                        NSMakeRect(
-                            NSMinX(screen.frame) - NSMinX(main_screen.frame),
-                            NSMaxY(main_screen.frame) - NSMaxY(screen.frame),
-                            NSWidth(screen.frame),
-                            NSHeight(screen.frame)),
+                        NSMakeRect(origin.x, origin.y,
+                            NSWidth(screen.frame), NSHeight(screen.frame)),
                         NSMakeRect(cg_pos.x, cg_pos.y, cg_size.width, cg_size.height));
                     offscreen = NSWidth(visible) < MIN_VISIBLE || NSHeight(visible) < MIN_VISIBLE;
                 }
@@ -682,10 +685,9 @@ inline bool is_full_screen(AXUIElementRef _window) {
                     if (AXValueGetValue(_size, kAXValueTypeCGSize, &cg_size)) {
                         float menuBarHeight =
                             fmax(0, NSMaxY(screen.frame) - NSMaxY(screen.visibleFrame) - 1);
-                        NSScreen * main_screen = NSScreen.screens[0];
-                        float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
-                        full_screen = cg_pos.x == NSMinX(screen.frame) &&
-                                      cg_pos.y == screenOriginY + menuBarHeight &&
+                        CGPoint origin = screen_origin(screen);
+                        full_screen = cg_pos.x == origin.x &&
+                                      cg_pos.y == origin.y + menuBarHeight &&
                                       cg_size.width == NSWidth(screen.frame) &&
                                       cg_size.height == NSHeight(screen.frame) - menuBarHeight;
                     }
@@ -1099,26 +1101,24 @@ void onTick() {
             mousePoint.x += mouse_x_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
             mousePoint.y += mouse_y_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
             if (screen) {
-                NSScreen * main_screen = NSScreen.screens[0];
-                float screenOriginX = NSMinX(screen.frame) - NSMinX(main_screen.frame);
-                float screenOriginY = NSMaxY(main_screen.frame) - NSMaxY(screen.frame);
+                CGPoint origin = screen_origin(screen);
 
-                if (oldPoint.x > screenOriginX + NSWidth(screen.frame) - WINDOW_CORRECTION) {
+                if (oldPoint.x > origin.x + NSWidth(screen.frame) - WINDOW_CORRECTION) {
                     if (verbose) { NSLog(@"Screen edge correction"); }
-                    mousePoint.x = screenOriginX + NSWidth(screen.frame) - SCREEN_EDGE_CORRECTION;
-                } else if (oldPoint.x < screenOriginX + WINDOW_CORRECTION - 1) {
+                    mousePoint.x = origin.x + NSWidth(screen.frame) - SCREEN_EDGE_CORRECTION;
+                } else if (oldPoint.x < origin.x + WINDOW_CORRECTION - 1) {
                     if (verbose) { NSLog(@"Screen edge correction"); }
-                    mousePoint.x = screenOriginX + SCREEN_EDGE_CORRECTION;
+                    mousePoint.x = origin.x + SCREEN_EDGE_CORRECTION;
                 }
 
-                if (oldPoint.y > screenOriginY + NSHeight(screen.frame) - WINDOW_CORRECTION) {
+                if (oldPoint.y > origin.y + NSHeight(screen.frame) - WINDOW_CORRECTION) {
                     if (verbose) { NSLog(@"Screen edge correction"); }
-                    mousePoint.y = screenOriginY + NSHeight(screen.frame) - SCREEN_EDGE_CORRECTION;
+                    mousePoint.y = origin.y + NSHeight(screen.frame) - SCREEN_EDGE_CORRECTION;
                 } else {
                     float menuBarHeight = fmax(0, NSMaxY(screen.frame) - NSMaxY(screen.visibleFrame) - 1);
-                    if (mousePoint.y < screenOriginY + menuBarHeight + MENUBAR_CORRECTION) {
+                    if (mousePoint.y < origin.y + menuBarHeight + MENUBAR_CORRECTION) {
                         if (verbose) { NSLog(@"Menu bar correction"); }
-                        mousePoint.y = screenOriginY;
+                        mousePoint.y = origin.y;
                     }
                 }
             }

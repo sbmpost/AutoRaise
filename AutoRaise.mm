@@ -1034,20 +1034,19 @@ bool appActivated() {
     }
 
     if (_activatedWindow) {
-        CGPoint warpPoint = get_mousepoint(_activatedWindow);
         bool sameScreen = false;
         if (warpOnlyAcrossScreens) {
             CGEventRef _event = CGEventCreate(NULL);
             CGPoint mousePoint = CGEventGetLocation(_event);
             if (_event) { CFRelease(_event); }
-            sameScreen = findScreen(mousePoint) == findScreen(warpPoint);
+            sameScreen = findScreen(mousePoint) == window_screen(_activatedWindow);
         }
 
         if (sameScreen) {
             if (verbose) { NSLog(@"Not warping within the same screen"); }
         } else {
             if (verbose) { NSLog(@"Warp mouse"); }
-            CGWarpMouseCursorPosition(warpPoint);
+            CGWarpMouseCursorPosition(get_mousepoint(_activatedWindow));
         }
         if (!finder_app) { CFRelease(_activatedWindow); }
     }

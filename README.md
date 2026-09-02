@@ -9,10 +9,9 @@ macOS is concerned and cannot be focused separately.
 
 **Two repositories**
 
-This one holds AutoRaise itself: the part that does the raising and focusing, and all the command line options. The menu bar
-app with its preferences window is a separate project, [AutoRaise-UI](https://github.com/sbmpost/AutoRaise-UI).
-
-So if your question is about the interface, that is the place to be. Anything about the raising and focusing belongs here.
+The repository you are currently looking at holds AutoRaise itself: the part that does the raising and focusing with all the command
+line options. The menu bar app with its preferences window is a separate project, [AutoRaise-UI](https://github.com/sbmpost/AutoRaise-UI).
+So things that are about the interface go there and anything about the raising and focusing belongs here.
 
 **Quick start**
 

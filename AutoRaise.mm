@@ -1097,6 +1097,19 @@ void onTick() {
         // ensures oldCorrectedPoint always has a recent value.
         if (mouseMoved) {
             NSScreen * screen = findScreen(mousePoint);
+            if (verbose) {
+                static NSScreen * loggedScreen = NULL;
+                if (screen != loggedScreen) {
+                    loggedScreen = screen;
+                    if (screen) {
+                        CGPoint origin = screen_origin(screen);
+                        NSLog(@"Mouse screen: %@, origin (%.0f, %.0f), mouse (%.1f, %.1f)",
+                            screen.localizedName, origin.x, origin.y, mousePoint.x, mousePoint.y);
+                    } else {
+                        NSLog(@"Mouse screen: none, mouse (%.1f, %.1f)", mousePoint.x, mousePoint.y);
+                    }
+                }
+            }
             mousePoint.x += mouse_x_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
             mousePoint.y += mouse_y_diff > 0 ? WINDOW_CORRECTION : -WINDOW_CORRECTION;
             if (screen) {

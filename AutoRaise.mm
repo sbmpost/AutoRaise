@@ -27,6 +27,7 @@
 #include <AppKit/AppKit.h>
 #include <Carbon/Carbon.h>
 #include <libproc.h>
+#include <sys/sysctl.h>
 
 #define AUTORAISE_VERSION "5.7"
 #define STACK_THRESHOLD 20
@@ -314,6 +315,30 @@ inline bool mc_active() {
     }
 
     if (verbose && active) { NSLog(@"Mission Control is active"); }
+    return active;
+}
+
+// A screen capture uses the mouse to select a region, so raising or focusing
+// while one is in progress changes what gets captured. The capture UI is an
+// LSUIElement and never becomes frontmost, so stayFocusedBundleIds cannot match
+// it, but the screencapture process exists only while a capture is running.
+inline bool capture_active() {
+    int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
+    size_t size = 0;
+    if (sysctl(mib, 4, NULL, &size, NULL, 0)) { return false; }
+
+    bool active = false;
+    size += size / 8; // slack, a process may start while we allocate
+    struct kinfo_proc * procs = (struct kinfo_proc *) malloc(size);
+    if (procs) {
+        if (!sysctl(mib, 4, procs, &size, NULL, 0)) {
+            size_t count = size / sizeof(struct kinfo_proc);
+            for (size_t i=0;!active && i != count;i++) {
+                active = !strcmp(procs[i].kp_proc.p_comm, "screencapture");
+            }
+        }
+        free(procs);
+    }
     return active;
 }
 
@@ -1288,6 +1313,11 @@ void onTick() {
                         }
                     }
                     CFRelease(_frontmostApp);
+                }
+
+                if (needs_raise && capture_active()) {
+                    needs_raise = false;
+                    if (verbose) { NSLog(@"Excluding screen capture"); }
                 }
 
                 if (needs_raise) {

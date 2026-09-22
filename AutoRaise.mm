@@ -111,7 +111,8 @@ static NSArray * const mainWindowAppsWithoutTitle =@[
     @"Calculator",
     @"Podcasts",
     @"Stickies Pro",
-    @"Reeder"
+    @"Reeder",
+    @"PDFgear"
 ];
 static NSArray * pwas = @[
     @"Chrome",

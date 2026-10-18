@@ -86,7 +86,7 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
   - warpOnlyAcrossScreens: Only warp the mouse if the activated window is on a different screen than the mouse.
     The default is false.
 
-  - altTaskSwitcher: Set to true if you use 3rd party tools to switch between applications (other than standard command-tab).
+  - altTaskSwitcher: Set to true if you use a third-party task switcher, including one that switches windows within the same application.
 
   - requireMouseStop: Require the mouse to stop moving before raise/focus. The default is true.
 

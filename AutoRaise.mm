@@ -708,9 +708,23 @@ void spaceChanged();
 bool appActivated();
 void onTick();
 
-@interface MDWorkspaceWatcher:NSObject {}
+@interface MDWorkspaceWatcher:NSObject {
+    AXObserverRef _focusedWindowObserver;
+    AXUIElementRef _observedApplication;
+    pid_t _observedPid;
+}
 - (id)init;
+- (void)observeFrontmostApplication;
+- (void)stopObservingFocusedWindow;
+- (void)focusedWindowChanged:(AXObserverRef)observer;
 @end
+
+static void focusedWindowCallback(AXObserverRef observer, AXUIElementRef element,
+    CFStringRef notification, void * context) {
+    if (CFEqual(notification, kAXFocusedWindowChangedNotification)) {
+        [(__bridge MDWorkspaceWatcher *) context focusedWindowChanged: observer];
+    }
+}
 
 static MDWorkspaceWatcher * workspaceWatcher = NULL;
 
@@ -731,13 +745,76 @@ static MDWorkspaceWatcher * workspaceWatcher = NULL;
                 name: NSWorkspaceDidActivateApplicationNotification
                 object: nil];
             if (verbose) { NSLog(@"Registered app activated selector"); }
+            [self observeFrontmostApplication];
         }
     }
     return self;
 }
 
 - (void)dealloc {
+    [self stopObservingFocusedWindow];
+    [NSObject cancelPreviousPerformRequestsWithTarget: self];
     [[[NSWorkspace sharedWorkspace] notificationCenter] removeObserver: self];
+}
+
+- (void)stopObservingFocusedWindow {
+    if (_focusedWindowObserver) {
+        CFRunLoopRemoveSource(CFRunLoopGetMain(),
+            AXObserverGetRunLoopSource(_focusedWindowObserver), kCFRunLoopCommonModes);
+        CFRelease(_focusedWindowObserver);
+        _focusedWindowObserver = NULL;
+    }
+    if (_observedApplication) {
+        CFRelease(_observedApplication);
+        _observedApplication = NULL;
+    }
+    _observedPid = 0;
+}
+
+- (void)observeFrontmostApplication {
+    [NSObject cancelPreviousPerformRequestsWithTarget: self
+        selector: @selector(observeFrontmostApplication) object: nil];
+    if (!warpMouse || !altTaskSwitcher) {
+        [self stopObservingFocusedWindow];
+        return;
+    }
+    pid_t pid = [NSWorkspace sharedWorkspace].frontmostApplication.processIdentifier;
+    if (_focusedWindowObserver && _observedPid == pid) { return; }
+    [self stopObservingFocusedWindow];
+    if (pid <= 0) { return; }
+
+    AXObserverRef observer = NULL;
+    AXError error = AXObserverCreate(pid, focusedWindowCallback, &observer);
+    AXUIElementRef application = NULL;
+    if (error == kAXErrorSuccess) {
+        application = AXUIElementCreateApplication(pid);
+        error = AXObserverAddNotification(observer, application,
+            kAXFocusedWindowChangedNotification, (__bridge void *) self);
+    }
+    if (error != kAXErrorSuccess) {
+        NSLog(@"Unable to observe focused-window changes for pid %d: %d", pid, error);
+        if (application) { CFRelease(application); }
+        if (observer) { CFRelease(observer); }
+        if (error == kAXErrorCannotComplete) {
+            [self performSelector: @selector(observeFrontmostApplication) withObject: nil
+                afterDelay: MAX(pollMillis, 100)/1000.0];
+        }
+        return;
+    }
+    _focusedWindowObserver = observer;
+    _observedApplication = application;
+    _observedPid = pid;
+    CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer),
+        kCFRunLoopCommonModes);
+}
+
+- (void)focusedWindowChanged:(AXObserverRef)observer {
+    if (!warpMouse || !altTaskSwitcher || observer != _focusedWindowObserver ||
+        _observedPid != [NSWorkspace sharedWorkspace].frontmostApplication.processIdentifier) {
+        return;
+    }
+    if (verbose) { NSLog(@"Focused window changed for pid %d", _observedPid); }
+    [self appActivated: nil];
 }
 
 - (void)spaceChanged:(NSNotification *)notification {
@@ -746,7 +823,9 @@ static MDWorkspaceWatcher * workspaceWatcher = NULL;
 }
 
 - (void)appActivated:(NSNotification *)notification {
+    [self observeFrontmostApplication];
     if (verbose) { NSLog(@"App activated, waiting %0.3fs", ACTIVATE_DELAY_MS/1000.0); }
+    [NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(onAppActivated) object: nil];
     [self performSelector: @selector(onAppActivated) withObject: nil afterDelay: ACTIVATE_DELAY_MS/1000.0];
 }
 
@@ -935,12 +1014,21 @@ bool appActivated() {
 
     AXUIElementRef _activatedWindow = NULL;
     AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
-    AXUIElementCopyAttributeValue(_frontmostApp,
-        kAXMainWindowAttribute, (CFTypeRef *) &_activatedWindow);
-    if (!_activatedWindow) {
-        if (verbose) { NSLog(@"No main window, trying focused window"); }
+    if (altTaskSwitcher) {
         AXUIElementCopyAttributeValue(_frontmostApp,
             kAXFocusedWindowAttribute, (CFTypeRef *) &_activatedWindow);
+        if (!_activatedWindow) {
+            AXUIElementCopyAttributeValue(_frontmostApp,
+                kAXMainWindowAttribute, (CFTypeRef *) &_activatedWindow);
+        }
+    } else {
+        AXUIElementCopyAttributeValue(_frontmostApp,
+            kAXMainWindowAttribute, (CFTypeRef *) &_activatedWindow);
+        if (!_activatedWindow) {
+            if (verbose) { NSLog(@"No main window, trying focused window"); }
+            AXUIElementCopyAttributeValue(_frontmostApp,
+                kAXFocusedWindowAttribute, (CFTypeRef *) &_activatedWindow);
+        }
     }
     CFRelease(_frontmostApp);
 
@@ -968,15 +1056,23 @@ bool appActivated() {
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
         if (_mouseWindow) {
             if (!activated_by_task_switcher) {
-                pid_t mouseWindow_pid;
                 // Checking for mouse movement reduces the problem of the mouse being warped
                 // when changing spaces and simultaneously moving the mouse to another screen
                 ignoreActivated = fabs(mousePoint.x-oldPoint.x) > 0;
                 ignoreActivated = ignoreActivated || fabs(mousePoint.y-oldPoint.y) > 0;
                 // Check if the mouse is already hovering above the frontmost app. If
                 // for example we only change spaces, we don't want the mouse to warp
-                ignoreActivated = ignoreActivated || (AXUIElementGetPid(_mouseWindow,
-                    &mouseWindow_pid) == kAXErrorSuccess && mouseWindow_pid == frontmost_pid);
+                pid_t mouseWindow_pid;
+                if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess &&
+                    mouseWindow_pid == frontmost_pid) {
+                    CGWindowID activatedWindow_id = kCGNullWindowID;
+                    CGWindowID mouseWindow_id = kCGNullWindowID;
+                    ignoreActivated = ignoreActivated ||
+                        (_activatedWindow &&
+                        _AXUIElementGetWindow(_activatedWindow, &activatedWindow_id) == kAXErrorSuccess &&
+                        _AXUIElementGetWindow(_mouseWindow, &mouseWindow_id) == kAXErrorSuccess &&
+                        activatedWindow_id != kCGNullWindowID && activatedWindow_id == mouseWindow_id);
+                }
             }
             CFRelease(_mouseWindow);
         } else { // dock or top menu
@@ -1011,7 +1107,7 @@ bool appActivated() {
             if (verbose) { NSLog(@"Not warping within the same screen"); }
             scaleCursor = false;
         } else {
-            if (verbose) { NSLog(@"Warp mouse"); }
+            if (verbose) { NSLog(@"Warp mouse"); logWindowTitle(@"Warp target", _activatedWindow); }
             CGWarpMouseCursorPosition(get_mousepoint(_activatedWindow));
         }
         if (!finder_app) { CFRelease(_activatedWindow); }

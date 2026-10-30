@@ -67,7 +67,7 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
 **Command line usage:**
 
-    ./AutoRaise -pollMillis 50 -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -warpOnlyAcrossScreens false -altTaskSwitcher false -requireMouseStop false -requireMultipleScreens false -requireScreenChange false -ignoreSpaceChanged false -ignoreApps "App1,App2" -ignoreTitles "^window$" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
+    ./AutoRaise -pollMillis 50 -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -warpOnlyAcrossScreens false -altTaskSwitcher false -requireMouseStop false -requireMultipleScreens false -requireScreenChange false -activateTopWindowOnScreenChange false -ignoreSpaceChanged false -ignoreApps "App1,App2" -ignoreTitles "^window$" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
 
 *Note*: focusDelay is only supported when compiled with the "EXPERIMENTAL_FOCUS_FIRST" flag.
 
@@ -94,6 +94,10 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
   - requireScreenChange: Only raise/focus when the window under the mouse is on a different screen than the window
     that currently has focus. The default is false.
+
+  - activateTopWindowOnScreenChange: When the mouse moves to another screen than the window that currently has focus,
+    raise/focus the topmost window of that screen instead of the window under the mouse. The window under the mouse
+    is left alone until the mouse moves to another window. The default is false.
 
   - ignoreSpaceChanged: Do not immediately raise/focus after a space change. The default is false.
 
@@ -129,6 +133,7 @@ AutoRaise can read these parameters from a configuration file. To make this happ
     requireMouseStop=true
     requireMultipleScreens=false
     requireScreenChange=false
+    activateTopWindowOnScreenChange=false
     ignoreSpaceChanged=false
     invertDisableKey=false
     invertIgnoreApps=false
@@ -195,6 +200,7 @@ The output should look something like this:
       -requireMouseStop <true|false>
       -requireMultipleScreens <true|false>
       -requireScreenChange <true|false>
+      -activateTopWindowOnScreenChange <true|false>
       -ignoreSpaceChanged <true|false>
       -invertDisableKey <true|false>
       -invertIgnoreApps <true|false>

@@ -94,6 +94,10 @@ static AXUIElementRef _lastFocusedWindow = NULL;
 
 static AXObserverRef axObserver = NULL;
 static uint64_t lastDestroyedMouseWindow_id = kCGNullWindowID;
+// The window under the mouse when the topmost window of its screen was activated
+// instead. It is left alone while the mouse stays above it, otherwise it would be
+// raised right after the screen change after all.
+static CGWindowID bypassedMouseWindow_id = kCGNullWindowID;
 
 static CFMachPortRef eventTap = NULL;
 static char pathBuffer[PROC_PIDPATHINFO_MAXSIZE];
@@ -143,6 +147,7 @@ static bool propagateMouseMoved = false;
 static bool requireMouseStop = true;
 static bool requireMultipleScreens = false;
 static bool requireScreenChange = false;
+static bool activateTopWindowOnScreenChange = false;
 static bool ignoreSpaceChanged = false;
 static bool invertDisableKey = false;
 static bool invertIgnoreApps = false;
@@ -344,6 +349,25 @@ NSDictionary * topwindow(CGPoint point) {
     return top_window;
 }
 
+// The accessibility element of the window with the given id, retained.
+AXUIElementRef find_window(NSArray * application_windows, CGWindowID window_id) {
+    for (id application_window in application_windows) {
+        CGWindowID application_window_id;
+        AXUIElementRef application_window_ax =
+            (__bridge AXUIElementRef) application_window;
+        if (_AXUIElementGetWindow(
+            application_window_ax,
+            &application_window_id) == kAXErrorSuccess) {
+            if (application_window_id == window_id) {
+                CFRetain(application_window_ax);
+                return application_window_ax;
+            }
+        }
+    }
+
+    return NULL;
+}
+
 AXUIElementRef fallback(CGPoint point) {
     if (verbose) { NSLog(@"Fallback"); }
     AXUIElementRef _window = NULL;
@@ -358,20 +382,7 @@ AXUIElementRef fallback(CGPoint point) {
             NSArray * application_windows = (NSArray *) CFBridgingRelease(_windows_cf);
             CGWindowID top_window_id = [top_window[(__bridge id) kCGWindowNumber] intValue];
             if (top_window_id) {
-                for (id application_window in application_windows) {
-                    CGWindowID application_window_id;
-                    AXUIElementRef application_window_ax =
-                        (__bridge AXUIElementRef) application_window;
-                    if (_AXUIElementGetWindow(
-                        application_window_ax,
-                        &application_window_id) == kAXErrorSuccess) {
-                        if (application_window_id == top_window_id) {
-                            _window = application_window_ax;
-                            CFRetain(_window);
-                            break;
-                        }
-                    }
-                }
+                _window = find_window(application_windows, top_window_id);
             }
         } else {
             activate(pid);
@@ -609,6 +620,80 @@ inline NSScreen * findScreenByWindow(AXUIElementRef _window) {
     return NULL;
 }
 
+// The frontmost visible window that belongs to the screen, by the same centre rule
+// as findScreenByWindow. Returns its accessibility element, retained.
+AXUIElementRef topwindow_on_screen(NSScreen * screen) {
+    NSArray * window_list = (NSArray *) CFBridgingRelease(CGWindowListCopyWindowInfo(
+        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+        kCGNullWindowID));
+
+    for (NSDictionary * window in window_list) {
+        CGRect bounds;
+        CGRectMakeWithDictionaryRepresentation(
+            (__bridge CFDictionaryRef) window[(__bridge id) kCGWindowBounds], &bounds);
+        if (![window[(__bridge id) kCGWindowLayer] isEqual: @0] ||
+            ![window[(__bridge id) kCGWindowAlpha] floatValue] ||
+            findScreen(CGPointMake(CGRectGetMidX(bounds), CGRectGetMidY(bounds))) != screen) {
+            continue;
+        }
+
+        CFTypeRef _windows_cf = NULL;
+        AXUIElementRef _window_owner = AXUIElementCreateApplication(
+            [window[(__bridge id) kCGWindowOwnerPID] intValue]);
+        AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf);
+        CFRelease(_window_owner);
+        return find_window((NSArray *) CFBridgingRelease(_windows_cf),
+            [window[(__bridge id) kCGWindowNumber] intValue]);
+    }
+
+    return NULL;
+}
+
+// The mouse is on another screen than the focused window. Hovering a part of the
+// focused window that sticks out into the screen of the mouse does not count.
+bool is_screen_change(NSScreen * mouseScreen, CGWindowID mouseWindow_id, pid_t frontmost_pid) {
+    AXUIElementRef _focusedWindow = NULL;
+    AXUIElementRef _frontmostApp = AXUIElementCreateApplication(frontmost_pid);
+    AXUIElementCopyAttributeValue(_frontmostApp, kAXFocusedWindowAttribute, (CFTypeRef *) &_focusedWindow);
+    CFRelease(_frontmostApp);
+    if (!_focusedWindow) { return false; }
+
+    CGWindowID focusedWindow_id = kCGNullWindowID;
+    _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
+    NSScreen * focusedScreen = findScreenByWindow(_focusedWindow);
+    CFRelease(_focusedWindow);
+
+    return mouseScreen && focusedScreen && mouseScreen != focusedScreen &&
+        mouseWindow_id != focusedWindow_id;
+}
+
+// On a screen change the topmost window of the new screen takes the place of the
+// window under the mouse, so that entering a screen keeps the order of its windows.
+// Takes over _mouseWindow and returns the window to raise/focus.
+AXUIElementRef topwindow_on_screen_change(AXUIElementRef _mouseWindow, CGPoint point, pid_t frontmost_pid) {
+    CGWindowID mouseWindow_id = kCGNullWindowID;
+    _AXUIElementGetWindow(_mouseWindow, &mouseWindow_id);
+    if (mouseWindow_id != bypassedMouseWindow_id) { bypassedMouseWindow_id = kCGNullWindowID; }
+
+    NSScreen * mouseScreen = findScreen(point);
+    if (!is_screen_change(mouseScreen, mouseWindow_id, frontmost_pid)) { return _mouseWindow; }
+
+    AXUIElementRef _topWindow = topwindow_on_screen(mouseScreen);
+    if (!_topWindow) { return _mouseWindow; }
+
+    CGWindowID topWindow_id = kCGNullWindowID;
+    _AXUIElementGetWindow(_topWindow, &topWindow_id);
+    if (topWindow_id == mouseWindow_id) {
+        CFRelease(_topWindow);
+        return _mouseWindow;
+    }
+
+    if (verbose) { logWindowTitle(@"Topmost window on screen", _topWindow); }
+    bypassedMouseWindow_id = mouseWindow_id;
+    CFRelease(_mouseWindow);
+    return _topWindow;
+}
+
 // Tiling window managers park windows of inactive workspaces almost fully
 // offscreen, leaving only the few pixels macOS insists on. Raising such a sliver
 // switches workspace and parks the previous window in its place, which without
@@ -802,6 +887,7 @@ const NSString *kAltTaskSwitcher = @"altTaskSwitcher";
 const NSString *kRequireMouseStop = @"requireMouseStop";
 const NSString *kRequireMultipleScreens = @"requireMultipleScreens";
 const NSString *kRequireScreenChange = @"requireScreenChange";
+const NSString *kActivateTopWindowOnScreenChange = @"activateTopWindowOnScreenChange";
 const NSString *kWarpOnlyAcrossScreens = @"warpOnlyAcrossScreens";
 const NSString *kIgnoreSpaceChanged = @"ignoreSpaceChanged";
 const NSString *kStayFocusedBundleIds = @"stayFocusedBundleIds";
@@ -816,12 +902,12 @@ const NSString *kDisableKey = @"disableKey";
 const NSString *kFocusDelay = @"focusDelay";
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kWarpOnlyAcrossScreens,
     kVerbose, kAltTaskSwitcher, kFocusDelay, kRequireMouseStop, kRequireMultipleScreens, kRequireScreenChange,
-    kIgnoreSpaceChanged, kInvertDisableKey, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles,
+    kActivateTopWindowOnScreenChange, kIgnoreSpaceChanged, kInvertDisableKey, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles,
     kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
 #else
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kWarpOnlyAcrossScreens,
     kVerbose, kAltTaskSwitcher, kRequireMouseStop, kRequireMultipleScreens, kRequireScreenChange, kIgnoreSpaceChanged,
-    kInvertDisableKey, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles, kStayFocusedBundleIds,
+    kActivateTopWindowOnScreenChange, kInvertDisableKey, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles, kStayFocusedBundleIds,
     kDisableKey, kMouseDelta, kPollMillis];
 #endif
 NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
@@ -1161,6 +1247,10 @@ void onTick() {
         }
 
         AXUIElementRef _mouseWindow = get_mousewindow(mousePoint);
+        if (_mouseWindow && activateTopWindowOnScreenChange) {
+            _mouseWindow = topwindow_on_screen_change(
+                _mouseWindow, mousePoint, frontmostApp.processIdentifier);
+        }
         if (_mouseWindow) {
             pid_t mouseWindow_pid;
             if (AXUIElementGetPid(_mouseWindow, &mouseWindow_pid) == kAXErrorSuccess) {
@@ -1235,6 +1325,11 @@ void onTick() {
                 if (needs_raise && is_offscreen_window(_mouseWindow, mousePoint)) {
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding offscreen window"); }
+                }
+                if (needs_raise && bypassedMouseWindow_id != kCGNullWindowID &&
+                    mouseWindow_id == bypassedMouseWindow_id) {
+                    needs_raise = false;
+                    if (verbose) { NSLog(@"Excluding window bypassed on screen change"); }
                 }
                 CGWindowID focusedWindow_id;
 #ifdef FOCUS_FIRST
@@ -1406,6 +1501,7 @@ int main(int argc, const char * argv[]) {
         requireMouseStop   = [parameters[kRequireMouseStop] boolValue];
         requireMultipleScreens = [parameters[kRequireMultipleScreens] boolValue];
         requireScreenChange = [parameters[kRequireScreenChange] boolValue];
+        activateTopWindowOnScreenChange = [parameters[kActivateTopWindowOnScreenChange] boolValue];
         warpOnlyAcrossScreens = [parameters[kWarpOnlyAcrossScreens] boolValue];
         ignoreSpaceChanged = [parameters[kIgnoreSpaceChanged] boolValue];
         invertIgnoreApps   = [parameters[kInvertIgnoreApps] boolValue];
@@ -1423,6 +1519,7 @@ int main(int argc, const char * argv[]) {
         printf("  -requireMouseStop <true|false>\n");
         printf("  -requireMultipleScreens <true|false>\n");
         printf("  -requireScreenChange <true|false>\n");
+        printf("  -activateTopWindowOnScreenChange <true|false>\n");
         printf("  -ignoreSpaceChanged <true|false>\n");
         printf("  -invertDisableKey <true|false>\n");
         printf("  -invertIgnoreApps <true|false>\n");
@@ -1460,6 +1557,8 @@ int main(int argc, const char * argv[]) {
         printf("  * requireMouseStop: %s\n", requireMouseStop ? "true" : "false");
         printf("  * requireMultipleScreens: %s\n", requireMultipleScreens ? "true" : "false");
         printf("  * requireScreenChange: %s\n", requireScreenChange ? "true" : "false");
+        printf("  * activateTopWindowOnScreenChange: %s\n",
+            activateTopWindowOnScreenChange ? "true" : "false");
         printf("  * ignoreSpaceChanged: %s\n", ignoreSpaceChanged ? "true" : "false");
         printf("  * invertDisableKey: %s\n", invertDisableKey ? "true" : "false");
         printf("  * invertIgnoreApps: %s\n", invertIgnoreApps ? "true" : "false");

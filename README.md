@@ -67,7 +67,7 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
 **Command line usage:**
 
-    ./AutoRaise -pollMillis 50 -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -warpOnlyAcrossScreens false -altTaskSwitcher false -requireMouseStop false -requireMultipleScreens false -requireScreenChange false -ignoreSpaceChanged false -ignoreApps "App1,App2" -ignoreTitles "^window$" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
+    ./AutoRaise -pollMillis 50 -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -warpOnlyAcrossScreens false -altTaskSwitcher false -requireMouseStop false -requireMultipleScreens false -requireScreenChange false -requireFullscreenSpace false -ignoreSpaceChanged false -ignoreApps "App1,App2" -ignoreTitles "^window$" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
 
 *Note*: focusDelay is only supported when compiled with the "EXPERIMENTAL_FOCUS_FIRST" flag.
 
@@ -94,6 +94,9 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
   - requireScreenChange: Only raise/focus when the window under the mouse is on a different screen than the window
     that currently has focus. The default is false.
+
+  - requireFullscreenSpace: Only raise/focus windows on a fullscreen space, the current space of the screen under the mouse.
+    Windows on a normal desktop are left alone, also while swiping towards one. The default is false.
 
   - ignoreSpaceChanged: Do not immediately raise/focus after a space change. The default is false.
 

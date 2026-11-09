@@ -84,6 +84,9 @@ extern "C" CGSConnectionID CGSMainConnectionID(void);
 extern "C" CGError CGSSetCursorScale(CGSConnectionID connectionId, float scale);
 extern "C" CGError CGSGetCursorScale(CGSConnectionID connectionId, float *scale);
 extern "C" AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *out);
+extern "C" uint64_t CGSManagedDisplayGetCurrentSpace(CGSConnectionID cid, CFStringRef display);
+extern "C" int CGSSpaceGetType(CGSConnectionID cid, uint64_t space);
+extern "C" CFArrayRef CGSCopySpacesForWindows(CGSConnectionID cid, int mask, CFArrayRef windows);
 // Above methods are undocumented and subjective to incompatible changes
 
 #ifdef FOCUS_FIRST
@@ -143,6 +146,7 @@ static bool propagateMouseMoved = false;
 static bool requireMouseStop = true;
 static bool requireMultipleScreens = false;
 static bool requireScreenChange = false;
+static bool requireFullscreenSpace = false;
 static bool ignoreSpaceChanged = false;
 static bool invertDisableKey = false;
 static bool invertIgnoreApps = false;
@@ -802,6 +806,7 @@ const NSString *kAltTaskSwitcher = @"altTaskSwitcher";
 const NSString *kRequireMouseStop = @"requireMouseStop";
 const NSString *kRequireMultipleScreens = @"requireMultipleScreens";
 const NSString *kRequireScreenChange = @"requireScreenChange";
+const NSString *kRequireFullscreenSpace = @"requireFullscreenSpace";
 const NSString *kWarpOnlyAcrossScreens = @"warpOnlyAcrossScreens";
 const NSString *kIgnoreSpaceChanged = @"ignoreSpaceChanged";
 const NSString *kStayFocusedBundleIds = @"stayFocusedBundleIds";
@@ -816,11 +821,12 @@ const NSString *kDisableKey = @"disableKey";
 const NSString *kFocusDelay = @"focusDelay";
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kWarpOnlyAcrossScreens,
     kVerbose, kAltTaskSwitcher, kFocusDelay, kRequireMouseStop, kRequireMultipleScreens, kRequireScreenChange,
-    kIgnoreSpaceChanged, kInvertDisableKey, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles,
+    kRequireFullscreenSpace, kIgnoreSpaceChanged, kInvertDisableKey, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles,
     kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
 #else
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kWarpOnlyAcrossScreens,
-    kVerbose, kAltTaskSwitcher, kRequireMouseStop, kRequireMultipleScreens, kRequireScreenChange, kIgnoreSpaceChanged,
+    kVerbose, kAltTaskSwitcher, kRequireMouseStop, kRequireMultipleScreens, kRequireScreenChange,
+    kRequireFullscreenSpace, kIgnoreSpaceChanged,
     kInvertDisableKey, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles, kStayFocusedBundleIds,
     kDisableKey, kMouseDelta, kPollMillis];
 #endif
@@ -916,6 +922,28 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 @end // ConfigClass
 
 //------------------------------------------where it all happens--------------------------------------------
+
+// The window is on the current space of the screen under the mouse, and that space is
+// a fullscreen space. During a swipe between spaces the window under the mouse belongs
+// to the space being swiped to well before the current space changes.
+bool on_current_fullscreen_space(CGWindowID window_id, CGPoint point) {
+    NSScreen * screen = findScreen(point);
+    if (!screen) { return false; }
+    CFUUIDRef _uuid = CGDisplayCreateUUIDFromDisplayID(
+        [screen.deviceDescription[@"NSScreenNumber"] unsignedIntValue]);
+    if (!_uuid) { return false; }
+    CFStringRef _display = CFUUIDCreateString(NULL, _uuid);
+    CFRelease(_uuid);
+    CGSConnectionID cid = CGSMainConnectionID();
+    uint64_t space = CGSManagedDisplayGetCurrentSpace(cid, _display);
+    CFRelease(_display);
+    if (!space) { space = CGSManagedDisplayGetCurrentSpace(cid, CFSTR("Main")); }
+    if (CGSSpaceGetType(cid, space) != 4) { return false; } // 4 = fullscreen space
+
+    NSArray * window_spaces = (NSArray *) CFBridgingRelease(CGSCopySpacesForWindows(
+        cid, 7, (__bridge CFArrayRef) @[@(window_id)])); // 7 = all spaces
+    return [window_spaces containsObject: @(space)];
+}
 
 void spaceChanged() {
     spaceHasChanged = true;
@@ -1236,6 +1264,11 @@ void onTick() {
                     needs_raise = false;
                     if (verbose) { NSLog(@"Excluding offscreen window"); }
                 }
+                if (needs_raise && requireFullscreenSpace &&
+                    !on_current_fullscreen_space(mouseWindow_id, mousePoint)) {
+                    needs_raise = false;
+                    if (verbose) { NSLog(@"Excluding window outside a fullscreen space"); }
+                }
                 CGWindowID focusedWindow_id;
 #ifdef FOCUS_FIRST
                 ProcessSerialNumber mouseWindow_psn;
@@ -1406,6 +1439,7 @@ int main(int argc, const char * argv[]) {
         requireMouseStop   = [parameters[kRequireMouseStop] boolValue];
         requireMultipleScreens = [parameters[kRequireMultipleScreens] boolValue];
         requireScreenChange = [parameters[kRequireScreenChange] boolValue];
+        requireFullscreenSpace = [parameters[kRequireFullscreenSpace] boolValue];
         warpOnlyAcrossScreens = [parameters[kWarpOnlyAcrossScreens] boolValue];
         ignoreSpaceChanged = [parameters[kIgnoreSpaceChanged] boolValue];
         invertIgnoreApps   = [parameters[kInvertIgnoreApps] boolValue];
@@ -1423,6 +1457,7 @@ int main(int argc, const char * argv[]) {
         printf("  -requireMouseStop <true|false>\n");
         printf("  -requireMultipleScreens <true|false>\n");
         printf("  -requireScreenChange <true|false>\n");
+        printf("  -requireFullscreenSpace <true|false>\n");
         printf("  -ignoreSpaceChanged <true|false>\n");
         printf("  -invertDisableKey <true|false>\n");
         printf("  -invertIgnoreApps <true|false>\n");
@@ -1460,6 +1495,7 @@ int main(int argc, const char * argv[]) {
         printf("  * requireMouseStop: %s\n", requireMouseStop ? "true" : "false");
         printf("  * requireMultipleScreens: %s\n", requireMultipleScreens ? "true" : "false");
         printf("  * requireScreenChange: %s\n", requireScreenChange ? "true" : "false");
+        printf("  * requireFullscreenSpace: %s\n", requireFullscreenSpace ? "true" : "false");
         printf("  * ignoreSpaceChanged: %s\n", ignoreSpaceChanged ? "true" : "false");
         printf("  * invertDisableKey: %s\n", invertDisableKey ? "true" : "false");
         printf("  * invertIgnoreApps: %s\n", invertIgnoreApps ? "true" : "false");

@@ -104,7 +104,8 @@ static AXUIElementRef _dock_app = NULL;
 static NSArray * ignoreApps = NULL;
 static NSArray * ignoreTitles = NULL;
 static NSArray * stayFocusedBundleIds = NULL;
-static NSArray * const mainWindowAppsWithoutTitle =@[
+static NSArray * mainWindowAppsWithoutTitle = NULL;
+static NSArray * const defaultMainWindowAppsWithoutTitle =@[
     @"System Settings",
     @"System Information",
     @"Photos",
@@ -809,6 +810,7 @@ const NSString *kInvertDisableKey = @"invertDisableKey";
 const NSString *kInvertIgnoreApps = @"invertIgnoreApps";
 const NSString *kIgnoreApps = @"ignoreApps";
 const NSString *kIgnoreTitles = @"ignoreTitles";
+const NSString *kMainWindowAppsWithoutTitle = @"mainWindowAppsWithoutTitle";
 const NSString *kMouseDelta = @"mouseDelta";
 const NSString *kPollMillis = @"pollMillis";
 const NSString *kDisableKey = @"disableKey";
@@ -817,12 +819,12 @@ const NSString *kFocusDelay = @"focusDelay";
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kWarpOnlyAcrossScreens,
     kVerbose, kAltTaskSwitcher, kFocusDelay, kRequireMouseStop, kRequireMultipleScreens, kRequireScreenChange,
     kIgnoreSpaceChanged, kInvertDisableKey, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles,
-    kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
+    kMainWindowAppsWithoutTitle, kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
 #else
 NSArray *parametersDictionary = @[kDelay, kWarpX, kWarpY, kScale, kWarpOnlyAcrossScreens,
     kVerbose, kAltTaskSwitcher, kRequireMouseStop, kRequireMultipleScreens, kRequireScreenChange, kIgnoreSpaceChanged,
-    kInvertDisableKey, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles, kStayFocusedBundleIds,
-    kDisableKey, kMouseDelta, kPollMillis];
+    kInvertDisableKey, kInvertIgnoreApps, kIgnoreApps, kIgnoreTitles, kMainWindowAppsWithoutTitle,
+    kStayFocusedBundleIds, kDisableKey, kMouseDelta, kPollMillis];
 #endif
 NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
@@ -1428,6 +1430,7 @@ int main(int argc, const char * argv[]) {
         printf("  -invertIgnoreApps <true|false>\n");
         printf("  -ignoreApps \"<App1,App2,...>\"\n");
         printf("  -ignoreTitles \"<Regex1,Regex2,...>\"\n");
+        printf("  -mainWindowAppsWithoutTitle \"<App1,App2,...>\"\n");
         printf("  -stayFocusedBundleIds \"<Id1,Id2,...>\"\n");
         printf("  -disableKey <control|option|disabled>\n");
         printf("  -mouseDelta <0.1>\n");
@@ -1486,6 +1489,18 @@ int main(int argc, const char * argv[]) {
             printf("  * ignoreTitle: %s\n", [ignoreTitle UTF8String]);
         }
         ignoreTitles = [ignoreT copy];
+
+        NSMutableArray * mainWindowApps;
+        if (parameters[kMainWindowAppsWithoutTitle]) {
+            mainWindowApps = [[NSMutableArray alloc] initWithArray:
+                [parameters[kMainWindowAppsWithoutTitle] componentsSeparatedByString: @","]];
+        } else { mainWindowApps = [[NSMutableArray alloc] init]; }
+
+        for (id mainWindowApp in mainWindowApps) {
+            printf("  * mainWindowAppWithoutTitle: %s\n", [mainWindowApp UTF8String]);
+        }
+        [mainWindowApps addObjectsFromArray: defaultMainWindowAppsWithoutTitle];
+        mainWindowAppsWithoutTitle = [mainWindowApps copy];
 
         NSMutableArray * stayFocused;
         if (parameters[kStayFocusedBundleIds]) {

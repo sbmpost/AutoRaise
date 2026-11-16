@@ -67,7 +67,7 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
 **Command line usage:**
 
-    ./AutoRaise -pollMillis 50 -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -warpOnlyAcrossScreens false -altTaskSwitcher false -requireMouseStop false -requireMultipleScreens false -requireScreenChange false -ignoreSpaceChanged false -ignoreApps "App1,App2" -ignoreTitles "^window$" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
+    ./AutoRaise -pollMillis 50 -delay 1 -warpX 0.5 -warpY 0.1 -scale 2.5 -warpOnlyAcrossScreens false -altTaskSwitcher false -requireMouseStop false -requireMultipleScreens false -requireScreenChange false -ignoreSpaceChanged false -ignoreApps "App1,App2" -ignoreTitles "^window$" -mainWindowAppsWithoutTitle "App1,App2" -stayFocusedBundleIds "Id1,Id2" -disableKey control -mouseDelta 0.1
 
 *Note*: focusDelay is only supported when compiled with the "EXPERIMENTAL_FOCUS_FIRST" flag.
 
@@ -105,6 +105,9 @@ can only be stopped via "Activity Monitor" or the AppleScript provided near the 
 
   - ignoreTitles: Comma separated list of window titles (a title can be an ICU regular expression) for which you would like to disable focus/raise.
 
+  - mainWindowAppsWithoutTitle: Comma separated list of apps whose untitled main windows should still focus/raise.
+    By default AutoRaise skips windows without a title. For example, Yab's little windows have no title.
+
   - stayFocusedBundleIds: Comma separated list of app bundle identifiers that shouldn't lose focus even when hovering the mouse over another window.
     For example com.apple.screencaptureui keeps focus where it is while a screenshot region is being selected.
 
@@ -134,6 +137,7 @@ AutoRaise can read these parameters from a configuration file. To make this happ
     invertIgnoreApps=false
     ignoreApps="IntelliJ IDEA,WebStorm"
     ignoreTitles="\\s\\| Microsoft Teams,^window$,..."
+    mainWindowAppsWithoutTitle="Yab,..."
     stayFocusedBundleIds="com.apple.SecurityAgent,com.apple.screencaptureui,..."
     disableKey="control"
     mouseDelta=0.1
@@ -200,6 +204,7 @@ The output should look something like this:
       -invertIgnoreApps <true|false>
       -ignoreApps "<App1,App2, ...>"
       -ignoreTitles "<Regex1, Regex2, ...>"
+      -mainWindowAppsWithoutTitle "<App1,App2, ...>"
       -stayFocusedBundleIds "<Id1,Id2, ...>"
       -disableKey <control|option|disabled>
       -mouseDelta <0.1>

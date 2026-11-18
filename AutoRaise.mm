@@ -59,6 +59,9 @@ static CGPoint oldCorrectedPoint = {0, 0};
 // An activate delay of about 10 microseconds is just high enough to ensure we always
 // find the latest focused (main)window. This value should be kept as low as possible.
 #define ACTIVATE_DELAY_MS 10
+// An activation needs time to complete. One that is followed within a few milliseconds
+// by another is dropped, and focusing a window within about 20 milliseconds is undone.
+#define REFOCUS_DELAY_MS 50
 
 #define SCALE_DELAY_MS 400 // The moment the mouse scaling should start, feel free to modify.
 #define SCALE_DURATION_MS (SCALE_DELAY_MS+600) // Mouse scale duration, feel free to modify.
@@ -945,9 +948,81 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
 //------------------------------------------where it all happens--------------------------------------------
 
+#ifdef FOCUS_FIRST
+// When a space becomes the current one, macOS raises the window that had the focus on
+// it. A window that was focused without being raised then ends up in front of the
+// windows it was behind. At the time the space change is reported the windows are
+// still stacked as they were, so the ones in front of it are raised again and the
+// focus is given back afterwards.
+void restoreWindowStack() {
+    AXUIElementRef _focusedWindow = NULL;
+    pid_t focusedWindow_pid = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
+    AXUIElementRef _frontmostApp = AXUIElementCreateApplication(focusedWindow_pid);
+    AXUIElementCopyAttributeValue(_frontmostApp,
+        kAXFocusedWindowAttribute, (CFTypeRef *) &_focusedWindow);
+    CFRelease(_frontmostApp);
+    if (!_focusedWindow) { return; }
+
+    CGSize cg_size;
+    CGPoint cg_pos;
+    NSArray * top_windows = NULL;
+    CGWindowID focusedWindow_id = kCGNullWindowID;
+    _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
+    if (windowSize(_focusedWindow, &cg_size) && windowPosition(_focusedWindow, &cg_pos)) {
+        top_windows = topwindows(CGRectMake(cg_pos.x, cg_pos.y, cg_size.width, cg_size.height));
+    }
+    CFRelease(_focusedWindow);
+
+    // the number of windows in front of the focused window
+    NSUInteger count = [top_windows indexOfObjectPassingTest:
+        ^BOOL(NSDictionary * window, NSUInteger index, BOOL * stop) {
+        return [window[(__bridge id) kCGWindowNumber] unsignedIntValue] == focusedWindow_id; }];
+    if (!count || count == NSNotFound) { return; }
+
+    // Raise them back to front, so the last one raised is the one that was on top. An
+    // activation that is followed too quickly by the next one is dropped, so they are
+    // spaced out.
+    for (NSUInteger i = 0; i < count; i++) {
+        NSDictionary * window = top_windows[count - 1 - i];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, i * REFOCUS_DELAY_MS * NSEC_PER_MSEC),
+            dispatch_get_main_queue(), ^{
+            CFTypeRef _windows_cf = NULL;
+            pid_t pid = [window[(__bridge id) kCGWindowOwnerPID] intValue];
+            AXUIElementRef _window_owner = AXUIElementCreateApplication(pid);
+            AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf);
+            CFRelease(_window_owner);
+            AXUIElementRef _window = find_window((NSArray *) CFBridgingRelease(_windows_cf),
+                [window[(__bridge id) kCGWindowNumber] intValue]);
+            if (_window) {
+                if (verbose) { logWindowTitle(@"Restoring window", _window); }
+                raiseAndActivate(_window, pid);
+                CFRelease(_window);
+            }
+        });
+    }
+
+    pid_t topWindow_pid = [top_windows[0][(__bridge id) kCGWindowOwnerPID] intValue];
+    CGWindowID topWindow_id = [top_windows[0][(__bridge id) kCGWindowNumber] intValue];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, count * REFOCUS_DELAY_MS * NSEC_PER_MSEC),
+        dispatch_get_main_queue(), ^{
+        ProcessSerialNumber focusedWindow_psn;
+        ProcessSerialNumber topWindow_psn;
+        if (!GetProcessForPID(focusedWindow_pid, &focusedWindow_psn) &&
+            !GetProcessForPID(topWindow_pid, &topWindow_psn)) {
+            window_manager_focus_window_without_raise(&focusedWindow_psn,
+                focusedWindow_id, &topWindow_psn, topWindow_id);
+        }
+    });
+}
+#endif
+
 void spaceChanged() {
     spaceHasChanged = true;
     oldPoint.x = oldPoint.y = 0;
+#ifdef FOCUS_FIRST
+    // delayCount && !raiseDelayCount -> focus only (no raise)
+    if (delayCount && !raiseDelayCount) { restoreWindowStack(); }
+#endif
 }
 
 bool appActivated() {

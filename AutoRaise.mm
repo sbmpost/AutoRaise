@@ -29,7 +29,7 @@
 #include <libproc.h>
 #include <sys/sysctl.h>
 
-#define AUTORAISE_VERSION "5.7"
+#define AUTORAISE_VERSION "5.8"
 #define STACK_THRESHOLD 20
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST

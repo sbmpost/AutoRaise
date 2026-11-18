@@ -405,7 +405,9 @@ AXUIElementRef fallback(CGPoint point) {
             CGWindowID top_window_id = [top_window[(__bridge id) kCGWindowNumber] intValue];
             if (top_window_id) { _window = find_window(application_windows, top_window_id); }
         } else {
-            activate(pid);
+            pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
+                frontmostApplication] processIdentifier];
+            if (pid != frontmost_pid) { activate(pid); }
         }
     }
 

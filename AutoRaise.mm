@@ -343,8 +343,9 @@ inline bool capture_active() {
     return active;
 }
 
-NSDictionary * topwindow(CGPoint point) {
-    NSDictionary * top_window = NULL;
+// The windows that overlap with the given rectangle, front to back
+NSArray * topwindows(CGRect rect) {
+    NSMutableArray * top_windows = [[NSMutableArray alloc] init];
     NSArray * window_list = (NSArray *) CFBridgingRelease(CGWindowListCopyWindowInfo(
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
         kCGNullWindowID));
@@ -360,19 +361,36 @@ NSDictionary * topwindow(CGPoint point) {
             [window_bounds_dict[@"Width"] intValue],
             [window_bounds_dict[@"Height"] intValue]);
 
-        if (NSPointInRect(NSPointFromCGPoint(point), window_bounds)) {
-            top_window = window;
-            break;
+        if (NSIntersectsRect(NSRectFromCGRect(rect), window_bounds)) {
+            [top_windows addObject: window];
         }
     }
 
-    return top_window;
+    return top_windows;
+}
+
+AXUIElementRef find_window(NSArray * application_windows, CGWindowID window_id) {
+    for (id application_window in application_windows) {
+        CGWindowID application_window_id;
+        AXUIElementRef application_window_ax =
+            (__bridge AXUIElementRef) application_window;
+        if (_AXUIElementGetWindow(
+            application_window_ax,
+            &application_window_id) == kAXErrorSuccess) {
+            if (application_window_id == window_id) {
+                CFRetain(application_window_ax);
+                return application_window_ax;
+            }
+        }
+    }
+
+    return NULL;
 }
 
 AXUIElementRef fallback(CGPoint point) {
     if (verbose) { NSLog(@"Fallback"); }
     AXUIElementRef _window = NULL;
-    NSDictionary * top_window = topwindow(point);
+    NSDictionary * top_window = [topwindows(CGRectMake(point.x, point.y, 1, 1)) firstObject];
     if (top_window) {
         CFTypeRef _windows_cf = NULL;
         pid_t pid = [top_window[(__bridge id) kCGWindowOwnerPID] intValue];
@@ -382,22 +400,7 @@ AXUIElementRef fallback(CGPoint point) {
         if (_windows_cf) {
             NSArray * application_windows = (NSArray *) CFBridgingRelease(_windows_cf);
             CGWindowID top_window_id = [top_window[(__bridge id) kCGWindowNumber] intValue];
-            if (top_window_id) {
-                for (id application_window in application_windows) {
-                    CGWindowID application_window_id;
-                    AXUIElementRef application_window_ax =
-                        (__bridge AXUIElementRef) application_window;
-                    if (_AXUIElementGetWindow(
-                        application_window_ax,
-                        &application_window_id) == kAXErrorSuccess) {
-                        if (application_window_id == top_window_id) {
-                            _window = application_window_ax;
-                            CFRetain(_window);
-                            break;
-                        }
-                    }
-                }
-            }
+            if (top_window_id) { _window = find_window(application_windows, top_window_id); }
         } else {
             activate(pid);
         }

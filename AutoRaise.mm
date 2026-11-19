@@ -27,8 +27,9 @@
 #include <AppKit/AppKit.h>
 #include <Carbon/Carbon.h>
 #include <libproc.h>
+#include <sys/sysctl.h>
 
-#define AUTORAISE_VERSION "5.7"
+#define AUTORAISE_VERSION "5.8"
 #define STACK_THRESHOLD 20
 
 #ifdef EXPERIMENTAL_FOCUS_FIRST
@@ -58,6 +59,9 @@ static CGPoint oldCorrectedPoint = {0, 0};
 // An activate delay of about 10 microseconds is just high enough to ensure we always
 // find the latest focused (main)window. This value should be kept as low as possible.
 #define ACTIVATE_DELAY_MS 10
+// An activation needs time to complete. One that is followed within a few milliseconds
+// by another is dropped, and focusing a window within about 20 milliseconds is undone.
+#define REFOCUS_DELAY_MS 50
 
 #define SCALE_DELAY_MS 400 // The moment the mouse scaling should start, feel free to modify.
 #define SCALE_DURATION_MS (SCALE_DELAY_MS+600) // Mouse scale duration, feel free to modify.
@@ -112,7 +116,9 @@ static NSArray * const mainWindowAppsWithoutTitle =@[
     @"Podcasts",
     @"Stickies Pro",
     @"Reeder",
-    @"PDFgear"
+    @"PDFgear",
+    @"Yab",
+    @"Perplexity"
 ];
 static NSArray * pwas = @[
     @"Chrome",
@@ -318,8 +324,33 @@ inline bool mc_active() {
     return active;
 }
 
-NSDictionary * topwindow(CGPoint point) {
-    NSDictionary * top_window = NULL;
+// A screen capture uses the mouse to select a region, so raising or focusing
+// while one is in progress changes what gets captured. The capture UI is an
+// LSUIElement and never becomes frontmost, so stayFocusedBundleIds cannot match
+// it, but the screencapture process exists only while a capture is running.
+inline bool capture_active() {
+    int mib[] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
+    size_t size = 0;
+    if (sysctl(mib, 4, NULL, &size, NULL, 0)) { return false; }
+
+    bool active = false;
+    size += size / 8; // slack, a process may start while we allocate
+    struct kinfo_proc * procs = (struct kinfo_proc *) malloc(size);
+    if (procs) {
+        if (!sysctl(mib, 4, procs, &size, NULL, 0)) {
+            size_t count = size / sizeof(struct kinfo_proc);
+            for (size_t i=0;!active && i != count;i++) {
+                active = !strcmp(procs[i].kp_proc.p_comm, "screencapture");
+            }
+        }
+        free(procs);
+    }
+    return active;
+}
+
+// The windows that overlap with the given rectangle, front to back
+NSArray * topwindows(CGRect rect) {
+    NSMutableArray * top_windows = [[NSMutableArray alloc] init];
     NSArray * window_list = (NSArray *) CFBridgingRelease(CGWindowListCopyWindowInfo(
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
         kCGNullWindowID));
@@ -335,19 +366,36 @@ NSDictionary * topwindow(CGPoint point) {
             [window_bounds_dict[@"Width"] intValue],
             [window_bounds_dict[@"Height"] intValue]);
 
-        if (NSPointInRect(NSPointFromCGPoint(point), window_bounds)) {
-            top_window = window;
-            break;
+        if (NSIntersectsRect(NSRectFromCGRect(rect), window_bounds)) {
+            [top_windows addObject: window];
         }
     }
 
-    return top_window;
+    return top_windows;
+}
+
+AXUIElementRef find_window(NSArray * application_windows, CGWindowID window_id) {
+    for (id application_window in application_windows) {
+        CGWindowID application_window_id;
+        AXUIElementRef application_window_ax =
+            (__bridge AXUIElementRef) application_window;
+        if (_AXUIElementGetWindow(
+            application_window_ax,
+            &application_window_id) == kAXErrorSuccess) {
+            if (application_window_id == window_id) {
+                CFRetain(application_window_ax);
+                return application_window_ax;
+            }
+        }
+    }
+
+    return NULL;
 }
 
 AXUIElementRef fallback(CGPoint point) {
     if (verbose) { NSLog(@"Fallback"); }
     AXUIElementRef _window = NULL;
-    NSDictionary * top_window = topwindow(point);
+    NSDictionary * top_window = [topwindows(CGRectMake(point.x, point.y, 1, 1)) firstObject];
     if (top_window) {
         CFTypeRef _windows_cf = NULL;
         pid_t pid = [top_window[(__bridge id) kCGWindowOwnerPID] intValue];
@@ -357,24 +405,11 @@ AXUIElementRef fallback(CGPoint point) {
         if (_windows_cf) {
             NSArray * application_windows = (NSArray *) CFBridgingRelease(_windows_cf);
             CGWindowID top_window_id = [top_window[(__bridge id) kCGWindowNumber] intValue];
-            if (top_window_id) {
-                for (id application_window in application_windows) {
-                    CGWindowID application_window_id;
-                    AXUIElementRef application_window_ax =
-                        (__bridge AXUIElementRef) application_window;
-                    if (_AXUIElementGetWindow(
-                        application_window_ax,
-                        &application_window_id) == kAXErrorSuccess) {
-                        if (application_window_id == top_window_id) {
-                            _window = application_window_ax;
-                            CFRetain(_window);
-                            break;
-                        }
-                    }
-                }
-            }
+            if (top_window_id) { _window = find_window(application_windows, top_window_id); }
         } else {
-            activate(pid);
+            pid_t frontmost_pid = [[[NSWorkspace sharedWorkspace]
+                frontmostApplication] processIdentifier];
+            if (pid != frontmost_pid) { activate(pid); }
         }
     }
 
@@ -917,9 +952,81 @@ NSMutableDictionary *parameters = [[NSMutableDictionary alloc] init];
 
 //------------------------------------------where it all happens--------------------------------------------
 
+#ifdef FOCUS_FIRST
+// When a space becomes the current one, macOS raises the window that had the focus on
+// it. A window that was focused without being raised then ends up in front of the
+// windows it was behind. At the time the space change is reported the windows are
+// still stacked as they were, so the ones in front of it are raised again and the
+// focus is given back afterwards.
+void restoreWindowStack() {
+    AXUIElementRef _focusedWindow = NULL;
+    pid_t focusedWindow_pid = [[[NSWorkspace sharedWorkspace] frontmostApplication] processIdentifier];
+    AXUIElementRef _frontmostApp = AXUIElementCreateApplication(focusedWindow_pid);
+    AXUIElementCopyAttributeValue(_frontmostApp,
+        kAXFocusedWindowAttribute, (CFTypeRef *) &_focusedWindow);
+    CFRelease(_frontmostApp);
+    if (!_focusedWindow) { return; }
+
+    CGSize cg_size;
+    CGPoint cg_pos;
+    NSArray * top_windows = NULL;
+    CGWindowID focusedWindow_id = kCGNullWindowID;
+    _AXUIElementGetWindow(_focusedWindow, &focusedWindow_id);
+    if (windowSize(_focusedWindow, &cg_size) && windowPosition(_focusedWindow, &cg_pos)) {
+        top_windows = topwindows(CGRectMake(cg_pos.x, cg_pos.y, cg_size.width, cg_size.height));
+    }
+    CFRelease(_focusedWindow);
+
+    // the number of windows in front of the focused window
+    NSUInteger count = [top_windows indexOfObjectPassingTest:
+        ^BOOL(NSDictionary * window, NSUInteger index, BOOL * stop) {
+        return [window[(__bridge id) kCGWindowNumber] unsignedIntValue] == focusedWindow_id; }];
+    if (!count || count == NSNotFound) { return; }
+
+    // Raise them back to front, so the last one raised is the one that was on top. An
+    // activation that is followed too quickly by the next one is dropped, so they are
+    // spaced out.
+    for (NSUInteger i = 0; i < count; i++) {
+        NSDictionary * window = top_windows[count - 1 - i];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, i * REFOCUS_DELAY_MS * NSEC_PER_MSEC),
+            dispatch_get_main_queue(), ^{
+            CFTypeRef _windows_cf = NULL;
+            pid_t pid = [window[(__bridge id) kCGWindowOwnerPID] intValue];
+            AXUIElementRef _window_owner = AXUIElementCreateApplication(pid);
+            AXUIElementCopyAttributeValue(_window_owner, kAXWindowsAttribute, &_windows_cf);
+            CFRelease(_window_owner);
+            AXUIElementRef _window = find_window((NSArray *) CFBridgingRelease(_windows_cf),
+                [window[(__bridge id) kCGWindowNumber] intValue]);
+            if (_window) {
+                if (verbose) { logWindowTitle(@"Restoring window", _window); }
+                raiseAndActivate(_window, pid);
+                CFRelease(_window);
+            }
+        });
+    }
+
+    pid_t topWindow_pid = [top_windows[0][(__bridge id) kCGWindowOwnerPID] intValue];
+    CGWindowID topWindow_id = [top_windows[0][(__bridge id) kCGWindowNumber] intValue];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, count * REFOCUS_DELAY_MS * NSEC_PER_MSEC),
+        dispatch_get_main_queue(), ^{
+        ProcessSerialNumber focusedWindow_psn;
+        ProcessSerialNumber topWindow_psn;
+        if (!GetProcessForPID(focusedWindow_pid, &focusedWindow_psn) &&
+            !GetProcessForPID(topWindow_pid, &topWindow_psn)) {
+            window_manager_focus_window_without_raise(&focusedWindow_psn,
+                focusedWindow_id, &topWindow_psn, topWindow_id);
+        }
+    });
+}
+#endif
+
 void spaceChanged() {
     spaceHasChanged = true;
     oldPoint.x = oldPoint.y = 0;
+#ifdef FOCUS_FIRST
+    // delayCount && !raiseDelayCount -> focus only (no raise)
+    if (delayCount && !raiseDelayCount) { restoreWindowStack(); }
+#endif
 }
 
 bool appActivated() {
@@ -1289,6 +1396,11 @@ void onTick() {
                         }
                     }
                     CFRelease(_frontmostApp);
+                }
+
+                if (needs_raise && capture_active()) {
+                    needs_raise = false;
+                    if (verbose) { NSLog(@"Excluding screen capture"); }
                 }
 
                 if (needs_raise) {
